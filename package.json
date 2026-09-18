@@ -1,0 +1,20 @@
+{
+  "name": "mejunje-modular",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:storefront": "npm run dev --workspace=@mejunje/storefront",
+    "dev:lab": "npm run dev --workspace=@mejunje/lab",
+    "build:storefront": "npm run build --workspace=@mejunje/storefront",
+    "build:lab": "npm run build --workspace=@mejunje/lab",
+    "build": "npm run build --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  }
+}

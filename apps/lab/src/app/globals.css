@@ -1,0 +1,170 @@
+@import url('https://fonts.googleapis.com/css2?family=Courier+Prime:ital,wght@0,400;0,700;1,400;1,700&family=Newsreader:ital,opsz,wght@0,6..72,300..700;1,6..72,300..700&family=Special+Elite&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    background-color: #FCFAF7;
+    color: #282522;
+    font-family: 'Courier Prime', Courier, monospace;
+    letter-spacing: -0.01em;
+  }
+
+  h1, h2, h3, h4, h5, h6, .font-heading {
+    font-family: 'Courier Prime', 'Special Elite', Courier, monospace;
+    letter-spacing: 0.04em;
+    color: #282522;
+  }
+
+  /* Inputs, selects, and textareas default to crisp typewriter */
+  input, select, textarea, button {
+    font-family: inherit;
+  }
+}
+
+/* Authentic Antique Typewriter Voice */
+.typewriter-title {
+  font-family: 'Special Elite', 'Courier Prime', Courier, monospace;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #282522;
+}
+
+.typewriter-lead {
+  font-family: 'Courier Prime', Courier, monospace;
+  letter-spacing: 0.05em;
+  font-weight: 700;
+}
+
+.typewriter-sub {
+  font-family: 'Courier Prime', Courier, monospace;
+  letter-spacing: 0.04em;
+}
+
+.font-editorial {
+  font-family: 'Newsreader', 'EB Garamond', Georgia, serif;
+}
+
+/* Atelier Archival Sheet Style */
+.atelier-sheet {
+  background-color: #FFFFFF;
+  border: 1px solid #E7DDD0;
+  border-radius: 1.25rem;
+  box-shadow: 0 1px 3px 0 rgba(40, 37, 34, 0.03), 0 1px 2px -1px rgba(40, 37, 34, 0.03);
+  transition: all 0.2s ease-in-out;
+}
+.atelier-sheet:hover {
+  border-color: #A2AD94;
+  box-shadow: 0 4px 14px -2px rgba(125, 137, 114, 0.09);
+}
+
+/* Archival File Card / Ficha */
+.atelier-ficha {
+  background-color: #F7F4EE;
+  border: 1px solid #E7DDD0;
+  border-radius: 1rem;
+  transition: all 0.2s ease;
+}
+.atelier-ficha:hover {
+  background-color: #FFFFFF;
+  border-color: #A2AD94;
+}
+
+/* Discrete Stamp / Tag */
+.atelier-tag {
+  font-family: 'Courier Prime', Courier, monospace;
+  font-size: 0.6875rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.25rem 0.65rem;
+  border-radius: 9999px;
+  background-color: #F7F4EE;
+  color: #58604E;
+  border: 1px solid #E7DDD0;
+}
+
+/* Buttons by Semantic Intent */
+.btn-mejunje-primary {
+  background-color: #7D8972;
+  color: #FFFFFF;
+  border: 1px solid #58604E;
+  font-family: 'Courier Prime', Courier, monospace;
+  letter-spacing: 0.04em;
+  transition: all 0.15s ease;
+}
+.btn-mejunje-primary:hover {
+  background-color: #58604E;
+}
+
+.btn-mejunje-secondary {
+  background-color: #FFFFFF;
+  color: #282522;
+  border: 1px solid #E7DDD0;
+  font-family: 'Courier Prime', Courier, monospace;
+  letter-spacing: 0.03em;
+  transition: all 0.15s ease;
+}
+.btn-mejunje-secondary:hover {
+  background-color: #F7F4EE;
+  border-color: #D7C6B5;
+}
+
+.btn-mejunje-highlight {
+  background-color: #D5A24C;
+  color: #FFFFFF;
+  border: 1px solid #C4913B;
+  font-family: 'Courier Prime', Courier, monospace;
+  letter-spacing: 0.04em;
+  transition: all 0.15s ease;
+}
+.btn-mejunje-highlight:hover {
+  background-color: #C4913B;
+}
+
+.btn-mejunje-terracota {
+  background-color: #C87955;
+  color: #FFFFFF;
+  border: 1px solid #B56A48;
+  font-family: 'Courier Prime', Courier, monospace;
+  letter-spacing: 0.04em;
+  transition: all 0.15s ease;
+}
+.btn-mejunje-terracota:hover {
+  background-color: #B56A48;
+}
+
+.btn-mejunje-destructive {
+  background-color: #A95F52;
+  color: #FFFFFF;
+  border: 1px solid #944F43;
+  font-family: 'Courier Prime', Courier, monospace;
+  letter-spacing: 0.04em;
+  transition: all 0.15s ease;
+}
+.btn-mejunje-destructive:hover {
+  background-color: #944F43;
+}
+
+/* Minimalist Scrollbar */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: #FCFAF7;
+}
+::-webkit-scrollbar-thumb {
+  background: #E7DDD0;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #A2AD94;
+}
+
+/* Delicate selection styling */
+::selection {
+  background-color: #E7DDD0;
+  color: #282522;
+}

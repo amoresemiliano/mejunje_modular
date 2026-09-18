@@ -1,0 +1,10 @@
+{
+    "version":  "0.1.0",
+    "name":  "@mejunje/ui",
+    "main":  "./src/index.ts",
+    "scripts":  {
+                    "build":  "echo package @mejunje/ui boundary"
+                },
+    "types":  "./src/index.ts",
+    "private":  true
+}

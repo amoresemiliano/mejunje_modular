@@ -1,0 +1,10 @@
+{
+    "version":  "0.1.0",
+    "name":  "@mejunje/config",
+    "main":  "./src/index.ts",
+    "scripts":  {
+                    "build":  "echo package @mejunje/config boundary"
+                },
+    "types":  "./src/index.ts",
+    "private":  true
+}

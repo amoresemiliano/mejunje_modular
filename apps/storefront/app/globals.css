@@ -1,0 +1,48 @@
+@import url('https://fonts.googleapis.com/css2?family=Courier+Prime:ital,wght@0,400;0,700;1,400;1,700&family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400;1,600&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #FAF8F5;
+  --foreground: #201F1D;
+}
+
+body {
+  background-color: #FAF8F5;
+  color: #201F1D;
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Hide scrollbar for clean horizontal scrolls */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Custom Selection */
+::selection {
+  background-color: #C87D38;
+  color: #FFFFFF;
+}
+
+/* Subtle Typewriter animations */
+@keyframes typewriterPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+.typewriter-cursor::after {
+  content: "█";
+  display: inline-block;
+  margin-left: 2px;
+  animation: typewriterPulse 1s infinite;
+  color: #C87D38;
+}

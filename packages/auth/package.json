@@ -1,0 +1,10 @@
+{
+    "version":  "0.1.0",
+    "name":  "@mejunje/auth",
+    "main":  "./src/index.ts",
+    "scripts":  {
+                    "build":  "echo package @mejunje/auth boundary"
+                },
+    "types":  "./src/index.ts",
+    "private":  true
+}
