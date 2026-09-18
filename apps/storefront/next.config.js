@@ -7,14 +7,15 @@ const nextConfig = {
   },
 
   async rewrites() {
+    const labOrigin = process.env.LAB_ORIGIN || 'https://mejunje-lab.vercel.app';
     return [
       {
         source: '/lab',
-        destination: 'https://kamelo.vercel.app/lab',
+        destination: `${labOrigin}/lab`,
       },
       {
         source: '/lab/:path*',
-        destination: 'https://kamelo.vercel.app/lab/:path*',
+        destination: `${labOrigin}/lab/:path*`,
       },
     ];
   },
