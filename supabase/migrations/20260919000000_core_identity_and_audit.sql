@@ -3,7 +3,8 @@
 -- Core Identity, Authorization & Audit Foundation
 -- Domain: CORE (Agent 00)
 -- Description: Establishes customer/staff profile separation, RLS helper
---              functions, deny-by-default security policies, and audit log foundation.
+--              functions, deny-by-default security policies, staff update guards,
+--              and tamper-resistant audit log integrity triggers.
 -- =========================================================================
 
 -- Enable pgcrypto / uuid extensions
@@ -14,12 +15,16 @@ create extension if not exists "uuid-ossp";
 -- 1. HELPER: Updated at timestamp trigger
 -- =========================================================================
 create or replace function public.set_updated_at()
-returns trigger as $$
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
 begin
     new.updated_at = timezone('utc'::text, now());
     return new;
 end;
-$$ language plpgsql;
+$$;
 
 -- =========================================================================
 -- 2. TABLE: CUSTOMER PROFILES (customer_profiles)
@@ -38,7 +43,7 @@ create table if not exists public.customer_profiles (
     updated_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
-comment on table public.customer_profiles is 'Stores ecommerce customer profiles linked to auth.users.';
+comment on table public.customer_profiles is 'Stores ecommerce customer authentication profiles linked to auth.users.';
 
 create trigger trigger_customer_profiles_updated_at
     before update on public.customer_profiles
@@ -70,6 +75,7 @@ create trigger trigger_staff_profiles_updated_at
 -- =========================================================================
 -- 4. AUTHORIZATION FUNCTIONS (SECURITY DEFINER)
 -- Authoritative server-side helper functions for RLS evaluation.
+-- Hardened with fixed search_path = public and schema-qualified references.
 -- =========================================================================
 
 -- Check if current authenticated user is an active staff member
@@ -117,8 +123,55 @@ as $$
     limit 1;
 $$;
 
+-- Restrict execution grants
+revoke execute on function public.is_staff() from public;
+grant execute on function public.is_staff() to authenticated, anon;
+
+revoke execute on function public.is_admin() from public;
+grant execute on function public.is_admin() to authenticated;
+
+revoke execute on function public.get_staff_role() from public;
+grant execute on function public.get_staff_role() to authenticated;
+
 -- =========================================================================
--- 5. TABLE: AUDIT LOGS (audit_logs)
+-- 5. STAFF PROFILE PRIVILEGE ESCALATION GUARD (TRIGGER)
+-- Prevents non-admin staff from escalating own role, permissions, or is_active.
+-- =========================================================================
+create or replace function public.enforce_staff_profile_update_guard()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+    -- Only administrators can modify authorization, security, or status fields
+    if not public.is_admin() then
+        if new.role is distinct from old.role then
+            raise exception 'Unauthorized: Non-admin staff cannot modify their own role.';
+        end if;
+        if new.permissions is distinct from old.permissions then
+            raise exception 'Unauthorized: Non-admin staff cannot modify their own permissions.';
+        end if;
+        if new.is_active is distinct from old.is_active then
+            raise exception 'Unauthorized: Non-admin staff cannot modify their own active status.';
+        end if;
+        if new.id is distinct from old.id then
+            raise exception 'Unauthorized: Staff ID cannot be mutated.';
+        end if;
+        if new.email is distinct from old.email then
+            raise exception 'Unauthorized: Staff email cannot be mutated directly.';
+        end if;
+    end if;
+    return new;
+end;
+$$;
+
+create trigger trigger_staff_profiles_update_guard
+    before update on public.staff_profiles
+    for each row execute function public.enforce_staff_profile_update_guard();
+
+-- =========================================================================
+-- 6. TABLE: AUDIT LOGS (audit_logs)
 -- Shared audit trail for security and sensitive business operations.
 -- Immutable by default (no update/delete policies).
 -- =========================================================================
@@ -141,7 +194,56 @@ create index if not exists idx_audit_logs_entity on public.audit_logs(entity_typ
 create index if not exists idx_audit_logs_created_at on public.audit_logs(created_at desc);
 
 -- =========================================================================
--- 6. ROW LEVEL SECURITY (RLS) - DENY BY DEFAULT
+-- 7. AUDIT LOG INTEGRITY GUARD (TRIGGER)
+-- Authoritatively derives actor_id and actor_type from auth session.
+-- Forbids customer actors from forging staff or system identity.
+-- =========================================================================
+create or replace function public.enforce_audit_log_integrity()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+    v_current_uid uuid;
+    v_is_staff boolean;
+begin
+    v_current_uid := auth.uid();
+    
+    if v_current_uid is not null then
+        -- Force actor_id to match the verified authenticated session UID
+        new.actor_id := v_current_uid;
+        
+        -- Authoritatively determine whether actor is active staff
+        select exists (
+            select 1 from public.staff_profiles
+            where id = v_current_uid and is_active = true
+        ) into v_is_staff;
+        
+        if v_is_staff then
+            new.actor_type := 'staff';
+        else
+            -- Ordinary authenticated customer
+            new.actor_type := 'customer';
+        end if;
+    else
+        -- Unauthenticated actor
+        new.actor_id := null;
+        if new.actor_type not in ('visitor', 'system') then
+            new.actor_type := 'visitor';
+        end if;
+    end if;
+    
+    return new;
+end;
+$$;
+
+create trigger trigger_audit_logs_integrity
+    before insert on public.audit_logs
+    for each row execute function public.enforce_audit_log_integrity();
+
+-- =========================================================================
+-- 8. ROW LEVEL SECURITY (RLS) - DENY BY DEFAULT
 -- =========================================================================
 
 alter table public.customer_profiles enable row level security;
@@ -149,14 +251,12 @@ alter table public.staff_profiles enable row level security;
 alter table public.audit_logs enable row level security;
 
 -- --- RLS: customer_profiles ---
--- 1. Customers can read their own profile; Active staff can read customer profiles for operational support.
 create policy customer_profiles_select_policy on public.customer_profiles
     for select
     using (
         auth.uid() = id or public.is_staff()
     );
 
--- 2. Customers can update their own profile; Admins can update any profile.
 create policy customer_profiles_update_policy on public.customer_profiles
     for update
     using (
@@ -166,14 +266,12 @@ create policy customer_profiles_update_policy on public.customer_profiles
         auth.uid() = id or public.is_admin()
     );
 
--- 3. Registration: Customers can insert their own initial profile; Staff can provision customer profiles.
 create policy customer_profiles_insert_policy on public.customer_profiles
     for insert
     with check (
         auth.uid() = id or public.is_staff()
     );
 
--- 4. Only Admins can delete customer profiles.
 create policy customer_profiles_delete_policy on public.customer_profiles
     for delete
     using (
@@ -181,21 +279,18 @@ create policy customer_profiles_delete_policy on public.customer_profiles
     );
 
 -- --- RLS: staff_profiles ---
--- 1. Only active staff can view the staff directory. (Customers/Anonymous receive 0 rows).
 create policy staff_profiles_select_policy on public.staff_profiles
     for select
     using (
         public.is_staff()
     );
 
--- 2. Only Admins can provision new staff accounts.
 create policy staff_profiles_insert_policy on public.staff_profiles
     for insert
     with check (
         public.is_admin()
     );
 
--- 3. Admins can update any staff profile; Staff can update their own full_name.
 create policy staff_profiles_update_policy on public.staff_profiles
     for update
     using (
@@ -205,7 +300,6 @@ create policy staff_profiles_update_policy on public.staff_profiles
         public.is_admin() or (public.is_staff() and auth.uid() = id)
     );
 
--- 4. Only Admins can delete staff profiles.
 create policy staff_profiles_delete_policy on public.staff_profiles
     for delete
     using (
@@ -213,18 +307,16 @@ create policy staff_profiles_delete_policy on public.staff_profiles
     );
 
 -- --- RLS: audit_logs ---
--- 1. Only Admins and Managers can read the audit trail.
 create policy audit_logs_select_policy on public.audit_logs
     for select
     using (
         public.is_admin() or (public.is_staff() and public.get_staff_role() = 'manager')
     );
 
--- 2. Authenticated actors and staff can record audit events.
 create policy audit_logs_insert_policy on public.audit_logs
     for insert
     with check (
         auth.uid() is not null or public.is_staff()
     );
 
--- Notice: NO UPDATE or DELETE policy on audit_logs -> Strict immutability.
+-- Strict Immutability: NO UPDATE or DELETE policies on audit_logs.

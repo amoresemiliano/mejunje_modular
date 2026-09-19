@@ -4,7 +4,7 @@
  */
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import type { CustomerProfile, StaffProfile, UserRole } from '@mejunje/types';
+import type { CustomerProfile, StaffProfile, UserRole, ActorType } from '@mejunje/types';
 import type { StaffVerificationResult } from '@mejunje/contracts';
 import { getSupabaseEnv } from '@mejunje/config';
 
@@ -94,6 +94,66 @@ export function evaluateLabAccess(
   }
 
   return { allowed: false, reason: 'Denied: Unrecognized role fails closed.' };
+}
+
+/**
+ * Evaluates self-profile mutation requests on staff_profiles.
+ * Security Invariant: Non-admin staff can NEVER mutate role, permissions, or is_active.
+ */
+export function evaluateStaffProfileUpdate(
+  updatingStaff: StaffProfile,
+  fieldChanges: Partial<StaffProfile>
+): { allowed: boolean; reason: string } {
+  const isCallerAdmin = hasAdminAccess(updatingStaff);
+
+  if (isCallerAdmin) {
+    return { allowed: true, reason: 'Admin possesses full authorization to update staff fields.' };
+  }
+
+  // Protected security fields
+  const protectedFields: (keyof StaffProfile)[] = ['role', 'permissions', 'is_active', 'id', 'email'];
+  for (const field of protectedFields) {
+    if (field in fieldChanges && fieldChanges[field] !== undefined) {
+      return {
+        allowed: false,
+        reason: `Denied: Non-admin staff cannot modify protected security field '${String(field)}'.`,
+      };
+    }
+  }
+
+  return { allowed: true, reason: 'Permitted for benign staff self-profile update (e.g. full_name).' };
+}
+
+/**
+ * Authoritatively resolves actor_type for audit event logging.
+ * Prevents client-side forgery of staff or system credentials.
+ */
+export function resolveAuthoritativeActorType(
+  authUserId: string | null | undefined,
+  claimedActorType: ActorType,
+  isStaff: boolean
+): { effectiveActorType: ActorType; wasOverridden: boolean } {
+  if (!authUserId) {
+    const isAnonymousValid = claimedActorType === 'visitor' || claimedActorType === 'system';
+    return {
+      effectiveActorType: isAnonymousValid ? claimedActorType : 'visitor',
+      wasOverridden: !isAnonymousValid,
+    };
+  }
+
+  if (isStaff) {
+    return {
+      effectiveActorType: 'staff',
+      wasOverridden: claimedActorType !== 'staff',
+    };
+  }
+
+  // Authenticated customer cannot claim staff or system
+  const effectiveActorType: ActorType = 'customer';
+  return {
+    effectiveActorType,
+    wasOverridden: claimedActorType !== 'customer',
+  };
 }
 
 /**

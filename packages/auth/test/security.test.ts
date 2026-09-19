@@ -1,11 +1,14 @@
 /**
- * Security Assertion Suite for @mejunje/auth
+ * Hardened Security Assertion Suite for @mejunje/auth
  * Verifies core security invariants:
  * 1. Anonymous actors cannot access staff resources (/lab).
  * 2. Authenticated Customers cannot access staff resources (/lab).
  * 3. Customer A cannot access Customer B private profile.
  * 4. Staff access is explicitly granted and verified.
  * 5. Unknown/unrecognized roles fail closed.
+ * 6. Non-admin staff cannot escalate own role (staff -> admin) [STAFF ESCALATION GUARD].
+ * 7. Non-admin staff cannot modify own permissions or active status [STAFF ESCALATION GUARD].
+ * 8. Customer cannot forge a STAFF audit log entry [AUDIT INTEGRITY GUARD].
  */
 
 import {
@@ -13,7 +16,8 @@ import {
   hasAdminAccess,
   evaluateCustomerAccess,
   evaluateLabAccess,
-  verifyStaffStatus,
+  evaluateStaffProfileUpdate,
+  resolveAuthoritativeActorType,
 } from '../src/index';
 import type { CustomerProfile, StaffProfile } from '@mejunje/types';
 
@@ -60,16 +64,6 @@ const staffMember: StaffProfile = {
   email: 'staff.member@mejunje.com.ar',
   full_name: 'Staff Member',
   role: 'staff',
-  is_active: true,
-  created_at: new Date().toISOString(),
-  updated_at: new Date().toISOString(),
-};
-
-const managerMember: StaffProfile = {
-  id: 'usr-manager-mmm-4444',
-  email: 'manager@mejunje.com.ar',
-  full_name: 'Manager Member',
-  role: 'manager',
   is_active: true,
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
@@ -172,19 +166,64 @@ assert(
   `allowed = ${tamperedLab.allowed} (${tamperedLab.reason})`
 );
 
-// === 9. POSITIVE TEST: Active Staff can access customer profile for support ===
-const staffViewCust = evaluateCustomerAccess(staffMember.id, customerA.id, staffMember);
+// === 9. HARDENING TEST: Staff attempting to escalate own role to admin ===
+const escalateRoleAttempt = evaluateStaffProfileUpdate(staffMember, { role: 'admin' });
 assert(
-  'ACTIVE STAFF can access customer profile for customer support',
-  staffViewCust.allowed === true,
+  'STAFF cannot escalate own role (staff -> admin)',
+  escalateRoleAttempt.allowed === false,
+  'allowed = false',
+  `allowed = ${escalateRoleAttempt.allowed} (${escalateRoleAttempt.reason})`
+);
+
+// === 10. HARDENING TEST: Staff attempting to modify own permissions ===
+const escalatePermsAttempt = evaluateStaffProfileUpdate(staffMember, { permissions: ['all:access'] });
+assert(
+  'STAFF cannot modify own permissions',
+  escalatePermsAttempt.allowed === false,
+  'allowed = false',
+  `allowed = ${escalatePermsAttempt.allowed} (${escalatePermsAttempt.reason})`
+);
+
+// === 11. HARDENING TEST: Staff attempting to modify own is_active status ===
+const escalateActiveAttempt = evaluateStaffProfileUpdate(staffMember, { is_active: false });
+assert(
+  'STAFF cannot modify own is_active status',
+  escalateActiveAttempt.allowed === false,
+  'allowed = false',
+  `allowed = ${escalateActiveAttempt.allowed} (${escalateActiveAttempt.reason})`
+);
+
+// === 12. HARDENING TEST: Staff permitted benign self-edit (e.g. full_name) ===
+const benignSelfEdit = evaluateStaffProfileUpdate(staffMember, { full_name: 'Updated Name' });
+assert(
+  'STAFF permitted benign self-profile update (full_name)',
+  benignSelfEdit.allowed === true,
   'allowed = true',
-  `allowed = ${staffViewCust.allowed} (${staffViewCust.reason})`
+  `allowed = ${benignSelfEdit.allowed} (${benignSelfEdit.reason})`
+);
+
+// === 13. HARDENING TEST: Admin can modify staff roles ===
+const adminRoleUpdate = evaluateStaffProfileUpdate(adminMember, { role: 'manager' });
+assert(
+  'ADMIN can update staff role assignments',
+  adminRoleUpdate.allowed === true,
+  'allowed = true',
+  `allowed = ${adminRoleUpdate.allowed} (${adminRoleUpdate.reason})`
+);
+
+// === 14. HARDENING TEST: Customer attempting to forge staff audit event ===
+const forgedAuditEvent = resolveAuthoritativeActorType(customerA.id, 'staff', false);
+assert(
+  'CUSTOMER cannot forge STAFF audit event (coerced to customer)',
+  forgedAuditEvent.effectiveActorType === 'customer' && forgedAuditEvent.wasOverridden === true,
+  'effectiveActorType = customer, wasOverridden = true',
+  `effectiveActorType = ${forgedAuditEvent.effectiveActorType}, wasOverridden = ${forgedAuditEvent.wasOverridden}`
 );
 
 // Print summary
-console.log('\n========================================');
-console.log('  @mejunje/auth SECURITY TEST RESULTS');
-console.log('========================================');
+console.log('\n======================================================');
+console.log('  @mejunje/auth HARDENED SECURITY TEST SUITE RESULTS');
+console.log('======================================================');
 let allPassed = true;
 results.forEach((r, idx) => {
   const status = r.passed ? 'PASS' : 'FAIL';

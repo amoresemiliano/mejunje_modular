@@ -25,8 +25,9 @@ MEJUNJE distinguishes three fundamental actors:
    - Requires no account.
 2. **CUSTOMER**:
    - Registered ecommerce buyer with an account in `auth.users` and a corresponding profile in `public.customer_profiles`.
-   - Has access to future `/cuenta`, order history, and saved addresses.
+   - Has access to future `/cuenta`, order history, and saved preferences.
    - **CRITICAL INVARIANT**: A registered customer possesses **ZERO** privileges to internal `/lab` resources.
+   - **SCOPE CLARIFICATION**: `public.customer_profiles` is Core-owned account/authentication infrastructure. Full commercial CRM data (guest customers, addresses, CRM tags, RFM metrics) is owned by Agent 03-CLI.
 3. **STAFF**:
    - Internal MEJUNJE personnel (Lab technicians, Managers, Administrators).
    - Profile stored in `public.staff_profiles` with a designated role (`admin`, `manager`, `staff`) and an explicit `is_active = true` flag.
@@ -41,30 +42,30 @@ MEJUNJE distinguishes three fundamental actors:
          ▼                   ▼
 ┌──────────────────┐ ┌──────────────────┐
 │ customer_profiles│ │  staff_profiles  │
-│ (Ecommerce User) │ │  (Internal ERP)  │
-└──────────────────┘ └──────────────────┘
+│ (Core Account)   │ │  (Internal ERP)  │
+└────────┬─────────┘ └──────────────────┘
+         │ (optional link)
+         ▼
+┌──────────────────┐
+│ customer_entities│
+│ (03-CLI CRM)     │
+└──────────────────┘
 ```
 
 ---
 
-## 4. Authorization & Staff Roles
+## 4. Authorization & Staff Privilege Escalation Protection
 
-Staff authorization is strictly server-enforceable via Supabase Row Level Security (RLS) and PostgreSQL helper functions (`SECURITY DEFINER`):
+Staff authorization is strictly server-enforceable via Supabase Row Level Security (RLS), PostgreSQL triggers, and helper functions (`SECURITY DEFINER`):
 
 - `public.is_staff()`: Returns `true` if `auth.uid()` belongs to an active staff member.
 - `public.is_admin()`: Returns `true` if `auth.uid()` belongs to an active staff member with `role = 'admin'`.
 - `public.get_staff_role()`: Returns the role string (`'admin'`, `'manager'`, `'staff'`).
 
-### Role Matrix
-
-| Capability / Resource | Visitor | Customer | Staff | Manager | Admin |
-| :--- | :---: | :---: | :---: | :---: | :---: |
-| Public Storefront (`/`) | Allowed | Allowed | Allowed | Allowed | Allowed |
-| Own Profile (`/cuenta`) | Denied | Allowed | Allowed | Allowed | Allowed |
-| Other Customer Profile | Denied | Denied | Allowed (Support) | Allowed | Allowed |
-| Internal ERP (`/lab`) | Denied | Denied | Allowed | Allowed | Allowed |
-| Audit Log Inspection | Denied | Denied | Denied | Allowed | Allowed |
-| Staff User Provisioning | Denied | Denied | Denied | Denied | Allowed |
+### Security Definer Hardening Decisions
+- All security functions explicitly declare `set search_path = public` to prevent search_path injection attacks.
+- Execution grants are revoked from `PUBLIC` and selectively granted to `authenticated` and `anon`.
+- **Privilege Escalation Guard**: Trigger `trigger_staff_profiles_update_guard` rejects any update from non-admin actors that attempts to modify `role`, `permissions`, `is_active`, `email`, or `id`.
 
 ---
 
@@ -72,17 +73,17 @@ Staff authorization is strictly server-enforceable via Supabase Row Level Securi
 
 1. **Deny-by-Default**: Every table must have `alter table <name> enable row level security;` enabled in its initial migration.
 2. **No Permissive Placeholders**: Policies like `USING (true)` on private tables are strictly prohibited.
-3. **Authoritative Server Verification**: Frontend visibility is considered UX only; database RLS policies enforce true data boundaries.
+3. **Authoritative Server Verification**: Frontend visibility is considered UX only; database RLS policies and trigger guards enforce true data boundaries.
 4. **Immutable Audit Trail**: `audit_logs` allows insert from authenticated actors but prohibits update and delete across all roles.
 
 ---
 
-## 6. Audit Logging Foundation
+## 6. Audit Logging & Integrity Hardening
 
 The `public.audit_logs` table provides a unified, tamper-resistant trail for critical events:
 
-- `actor_id`: UUID referencing `auth.users(id)` (nullable for system/visitor events).
-- `actor_type`: `'visitor' | 'customer' | 'staff' | 'system'`.
+- `actor_id`: UUID referencing `auth.users(id)` (authoritatively derived from `auth.uid()` via trigger).
+- `actor_type`: `'visitor' | 'customer' | 'staff' | 'system'` (authoritatively coerced server-side to prevent client forgery of staff/system credentials).
 - `action`: Canonical action verb (e.g., `auth.login`, `catalog.price_change`, `formula.update`).
 - `entity_type`: Target entity name (e.g., `product`, `formula_version`, `staff_profile`).
 - `entity_id`: Identifier of the affected record.
