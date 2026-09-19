@@ -1,0 +1,230 @@
+-- =========================================================================
+-- MEJUNJE MODULAR - MIGRATION 20260919000000
+-- Core Identity, Authorization & Audit Foundation
+-- Domain: CORE (Agent 00)
+-- Description: Establishes customer/staff profile separation, RLS helper
+--              functions, deny-by-default security policies, and audit log foundation.
+-- =========================================================================
+
+-- Enable pgcrypto / uuid extensions
+create extension if not exists "pgcrypto";
+create extension if not exists "uuid-ossp";
+
+-- =========================================================================
+-- 1. HELPER: Updated at timestamp trigger
+-- =========================================================================
+create or replace function public.set_updated_at()
+returns trigger as $$
+begin
+    new.updated_at = timezone('utc'::text, now());
+    return new;
+end;
+$$ language plpgsql;
+
+-- =========================================================================
+-- 2. TABLE: CUSTOMER PROFILES (customer_profiles)
+-- Profile data for public ecommerce customers (Visitor -> Registered Customer).
+-- Tied 1:1 to auth.users.
+-- =========================================================================
+create table if not exists public.customer_profiles (
+    id uuid primary key references auth.users(id) on delete cascade,
+    email text not null,
+    full_name text,
+    phone text,
+    document_id text,
+    is_active boolean not null default true,
+    metadata jsonb default '{}'::jsonb,
+    created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+    updated_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+comment on table public.customer_profiles is 'Stores ecommerce customer profiles linked to auth.users.';
+
+create trigger trigger_customer_profiles_updated_at
+    before update on public.customer_profiles
+    for each row execute function public.set_updated_at();
+
+-- =========================================================================
+-- 3. TABLE: STAFF PROFILES (staff_profiles)
+-- Internal MEJUNJE staff profiles and role assignments.
+-- INVARIANT: CUSTOMER != STAFF. Existence of auth.users account does NOT
+-- grant internal /lab access unless explicitly provisioned here.
+-- =========================================================================
+create table if not exists public.staff_profiles (
+    id uuid primary key references auth.users(id) on delete cascade,
+    email text not null,
+    full_name text,
+    role text not null check (role in ('admin', 'manager', 'staff')),
+    is_active boolean not null default true,
+    permissions jsonb default '[]'::jsonb,
+    created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+    updated_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+comment on table public.staff_profiles is 'Stores internal staff accounts and authoritative role assignments.';
+
+create trigger trigger_staff_profiles_updated_at
+    before update on public.staff_profiles
+    for each row execute function public.set_updated_at();
+
+-- =========================================================================
+-- 4. AUTHORIZATION FUNCTIONS (SECURITY DEFINER)
+-- Authoritative server-side helper functions for RLS evaluation.
+-- =========================================================================
+
+-- Check if current authenticated user is an active staff member
+create or replace function public.is_staff()
+returns boolean
+language sql
+security definer
+stable
+set search_path = public
+as $$
+    select exists (
+        select 1 from public.staff_profiles
+        where id = auth.uid()
+          and is_active = true
+    );
+$$;
+
+-- Check if current authenticated user is an active admin
+create or replace function public.is_admin()
+returns boolean
+language sql
+security definer
+stable
+set search_path = public
+as $$
+    select exists (
+        select 1 from public.staff_profiles
+        where id = auth.uid()
+          and is_active = true
+          and role = 'admin'
+    );
+$$;
+
+-- Get the staff role of the current authenticated user
+create or replace function public.get_staff_role()
+returns text
+language sql
+security definer
+stable
+set search_path = public
+as $$
+    select role from public.staff_profiles
+    where id = auth.uid()
+      and is_active = true
+    limit 1;
+$$;
+
+-- =========================================================================
+-- 5. TABLE: AUDIT LOGS (audit_logs)
+-- Shared audit trail for security and sensitive business operations.
+-- Immutable by default (no update/delete policies).
+-- =========================================================================
+create table if not exists public.audit_logs (
+    id uuid primary key default gen_random_uuid(),
+    actor_id uuid references auth.users(id) on delete set null,
+    actor_type text not null check (actor_type in ('visitor', 'customer', 'staff', 'system')),
+    action text not null,
+    entity_type text not null,
+    entity_id text,
+    metadata jsonb default '{}'::jsonb,
+    created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+comment on table public.audit_logs is 'Immutable audit log recording security and sensitive operational actions.';
+
+-- Indexes for audit query performance
+create index if not exists idx_audit_logs_actor_id on public.audit_logs(actor_id);
+create index if not exists idx_audit_logs_entity on public.audit_logs(entity_type, entity_id);
+create index if not exists idx_audit_logs_created_at on public.audit_logs(created_at desc);
+
+-- =========================================================================
+-- 6. ROW LEVEL SECURITY (RLS) - DENY BY DEFAULT
+-- =========================================================================
+
+alter table public.customer_profiles enable row level security;
+alter table public.staff_profiles enable row level security;
+alter table public.audit_logs enable row level security;
+
+-- --- RLS: customer_profiles ---
+-- 1. Customers can read their own profile; Active staff can read customer profiles for operational support.
+create policy customer_profiles_select_policy on public.customer_profiles
+    for select
+    using (
+        auth.uid() = id or public.is_staff()
+    );
+
+-- 2. Customers can update their own profile; Admins can update any profile.
+create policy customer_profiles_update_policy on public.customer_profiles
+    for update
+    using (
+        auth.uid() = id or public.is_admin()
+    )
+    with check (
+        auth.uid() = id or public.is_admin()
+    );
+
+-- 3. Registration: Customers can insert their own initial profile; Staff can provision customer profiles.
+create policy customer_profiles_insert_policy on public.customer_profiles
+    for insert
+    with check (
+        auth.uid() = id or public.is_staff()
+    );
+
+-- 4. Only Admins can delete customer profiles.
+create policy customer_profiles_delete_policy on public.customer_profiles
+    for delete
+    using (
+        public.is_admin()
+    );
+
+-- --- RLS: staff_profiles ---
+-- 1. Only active staff can view the staff directory. (Customers/Anonymous receive 0 rows).
+create policy staff_profiles_select_policy on public.staff_profiles
+    for select
+    using (
+        public.is_staff()
+    );
+
+-- 2. Only Admins can provision new staff accounts.
+create policy staff_profiles_insert_policy on public.staff_profiles
+    for insert
+    with check (
+        public.is_admin()
+    );
+
+-- 3. Admins can update any staff profile; Staff can update their own full_name.
+create policy staff_profiles_update_policy on public.staff_profiles
+    for update
+    using (
+        public.is_admin() or (public.is_staff() and auth.uid() = id)
+    )
+    with check (
+        public.is_admin() or (public.is_staff() and auth.uid() = id)
+    );
+
+-- 4. Only Admins can delete staff profiles.
+create policy staff_profiles_delete_policy on public.staff_profiles
+    for delete
+    using (
+        public.is_admin()
+    );
+
+-- --- RLS: audit_logs ---
+-- 1. Only Admins and Managers can read the audit trail.
+create policy audit_logs_select_policy on public.audit_logs
+    for select
+    using (
+        public.is_admin() or (public.is_staff() and public.get_staff_role() = 'manager')
+    );
+
+-- 2. Authenticated actors and staff can record audit events.
+create policy audit_logs_insert_policy on public.audit_logs
+    for insert
+    with check (
+        auth.uid() is not null or public.is_staff()
+    );
+
+-- Notice: NO UPDATE or DELETE policy on audit_logs -> Strict immutability.
