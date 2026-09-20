@@ -5,7 +5,7 @@
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { CustomerProfile, StaffProfile, UserRole, ActorType } from '@mejunje/types';
-import type { StaffVerificationResult } from '@mejunje/contracts';
+import type { StaffVerificationResult, AuditEventPayload } from '@mejunje/contracts';
 import { getSupabaseEnv } from '@mejunje/config';
 
 /**
@@ -122,6 +122,54 @@ export function evaluateStaffProfileUpdate(
   }
 
   return { allowed: true, reason: 'Permitted for benign staff self-profile update (e.g. full_name).' };
+}
+
+/**
+ * Evaluates audit log write authority.
+ * Invariant: Direct client table INSERTs are DENIED. Writes must pass through controlled RPC log_audit_event().
+ */
+export function evaluateAuditWriteAuthority(
+  isDirectClientInsert: boolean,
+  isViaControlledRpc: boolean,
+  payload: AuditEventPayload
+): { allowed: boolean; effectiveActorType: ActorType; reason: string } {
+  if (isDirectClientInsert) {
+    return {
+      allowed: false,
+      effectiveActorType: payload.actorType,
+      reason: 'Denied: Direct arbitrary client INSERT to public.audit_logs is revoked.',
+    };
+  }
+
+  if (!isViaControlledRpc) {
+    return {
+      allowed: false,
+      effectiveActorType: payload.actorType,
+      reason: 'Denied: Unrecognized write mechanism.',
+    };
+  }
+
+  if (!payload.action || payload.action.trim() === '') {
+    return {
+      allowed: false,
+      effectiveActorType: payload.actorType,
+      reason: 'Denied: Audit action cannot be empty.',
+    };
+  }
+
+  if (!payload.entityType || payload.entityType.trim() === '') {
+    return {
+      allowed: false,
+      effectiveActorType: payload.actorType,
+      reason: 'Denied: Audit entity_type cannot be empty.',
+    };
+  }
+
+  return {
+    allowed: true,
+    effectiveActorType: payload.actorType,
+    reason: 'Accepted: Authorized via controlled RPC with server-derived actor identity.',
+  };
 }
 
 /**

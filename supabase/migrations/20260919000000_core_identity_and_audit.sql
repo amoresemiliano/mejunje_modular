@@ -4,7 +4,7 @@
 -- Domain: CORE (Agent 00)
 -- Description: Establishes customer/staff profile separation, RLS helper
 --              functions, deny-by-default security policies, staff update guards,
---              and tamper-resistant audit log integrity triggers.
+--              and controlled RPC audit log write authority.
 -- =========================================================================
 
 -- Enable pgcrypto / uuid extensions
@@ -173,7 +173,8 @@ create trigger trigger_staff_profiles_update_guard
 -- =========================================================================
 -- 6. TABLE: AUDIT LOGS (audit_logs)
 -- Shared audit trail for security and sensitive business operations.
--- Immutable by default (no update/delete policies).
+-- Direct client INSERT is REVOKED. Insertion is gated exclusively via RPC log_audit_event().
+-- Strictly immutable (no update/delete policies).
 -- =========================================================================
 create table if not exists public.audit_logs (
     id uuid primary key default gen_random_uuid(),
@@ -194,53 +195,75 @@ create index if not exists idx_audit_logs_entity on public.audit_logs(entity_typ
 create index if not exists idx_audit_logs_created_at on public.audit_logs(created_at desc);
 
 -- =========================================================================
--- 7. AUDIT LOG INTEGRITY GUARD (TRIGGER)
--- Authoritatively derives actor_id and actor_type from auth session.
--- Forbids customer actors from forging staff or system identity.
+-- 7. CONTROLLED AUDIT LOGGING FUNCTION (RPC)
+-- Authoritative server-side entry point for writing audit entries.
+-- Derives actor_id and actor_type directly from session; prevents client forgery.
 -- =========================================================================
-create or replace function public.enforce_audit_log_integrity()
-returns trigger
+create or replace function public.log_audit_event(
+    p_action text,
+    p_entity_type text,
+    p_entity_id text default null,
+    p_metadata jsonb default '{}'::jsonb
+)
+returns uuid
 language plpgsql
 security definer
 set search_path = public
 as $$
 declare
-    v_current_uid uuid;
+    v_uid uuid;
     v_is_staff boolean;
+    v_actor_type text;
+    v_audit_id uuid;
 begin
-    v_current_uid := auth.uid();
+    v_uid := auth.uid();
     
-    if v_current_uid is not null then
-        -- Force actor_id to match the verified authenticated session UID
-        new.actor_id := v_current_uid;
-        
-        -- Authoritatively determine whether actor is active staff
+    if v_uid is not null then
         select exists (
             select 1 from public.staff_profiles
-            where id = v_current_uid and is_active = true
+            where id = v_uid and is_active = true
         ) into v_is_staff;
         
         if v_is_staff then
-            new.actor_type := 'staff';
+            v_actor_type := 'staff';
         else
-            -- Ordinary authenticated customer
-            new.actor_type := 'customer';
+            v_actor_type := 'customer';
         end if;
     else
-        -- Unauthenticated actor
-        new.actor_id := null;
-        if new.actor_type not in ('visitor', 'system') then
-            new.actor_type := 'visitor';
-        end if;
+        v_actor_type := 'visitor';
     end if;
     
-    return new;
+    if p_action is null or trim(p_action) = '' then
+        raise exception 'Audit action cannot be empty.';
+    end if;
+    if p_entity_type is null or trim(p_entity_type) = '' then
+        raise exception 'Audit entity_type cannot be empty.';
+    end if;
+    
+    insert into public.audit_logs (
+        actor_id,
+        actor_type,
+        action,
+        entity_type,
+        entity_id,
+        metadata
+    ) values (
+        v_uid,
+        v_actor_type,
+        trim(p_action),
+        trim(p_entity_type),
+        p_entity_id,
+        coalesce(p_metadata, '{}'::jsonb)
+    ) returning id into v_audit_id;
+    
+    return v_audit_id;
 end;
 $$;
 
-create trigger trigger_audit_logs_integrity
-    before insert on public.audit_logs
-    for each row execute function public.enforce_audit_log_integrity();
+-- Restrict direct table write access from clients
+revoke insert on public.audit_logs from public, authenticated, anon;
+revoke execute on function public.log_audit_event from public;
+grant execute on function public.log_audit_event to authenticated, anon;
 
 -- =========================================================================
 -- 8. ROW LEVEL SECURITY (RLS) - DENY BY DEFAULT
@@ -307,16 +330,13 @@ create policy staff_profiles_delete_policy on public.staff_profiles
     );
 
 -- --- RLS: audit_logs ---
+-- 1. Read access restricted to Admins and Managers
 create policy audit_logs_select_policy on public.audit_logs
     for select
     using (
         public.is_admin() or (public.is_staff() and public.get_staff_role() = 'manager')
     );
 
-create policy audit_logs_insert_policy on public.audit_logs
-    for insert
-    with check (
-        auth.uid() is not null or public.is_staff()
-    );
-
+-- Notice: Direct client INSERT policy REMOVED.
+-- Clients must invoke the controlled RPC public.log_audit_event().
 -- Strict Immutability: NO UPDATE or DELETE policies on audit_logs.

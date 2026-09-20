@@ -4,7 +4,7 @@
 
 This document specifies the core backend and database foundation for MEJUNJE. It defines the shared identity model, authorization invariants, Row Level Security (RLS) standards, audit logging, Supabase storage guidelines, and migration governance.
 
-All domain module agents (Catalog, Customers, Suppliers, Laboratory, Production, Purchases, Inventory, Marketing, Observatory, Ecommerce) build their persistence layers upon this foundation.
+All domain module agents (01-ECO, 02-CAT, 03-CLI, 04-PRV, 05-LAB, 06-PRD, 07-COM, 08-INV, 09-MKT, 10-OBS, 11-PED) build their persistence layers upon this foundation.
 
 ---
 
@@ -74,20 +74,17 @@ Staff authorization is strictly server-enforceable via Supabase Row Level Securi
 1. **Deny-by-Default**: Every table must have `alter table <name> enable row level security;` enabled in its initial migration.
 2. **No Permissive Placeholders**: Policies like `USING (true)` on private tables are strictly prohibited.
 3. **Authoritative Server Verification**: Frontend visibility is considered UX only; database RLS policies and trigger guards enforce true data boundaries.
-4. **Immutable Audit Trail**: `audit_logs` allows insert from authenticated actors but prohibits update and delete across all roles.
+4. **Controlled Audit Ingestion**: Direct client `INSERT` on `public.audit_logs` is revoked; insertion must occur via the server-validated RPC `log_audit_event()`.
 
 ---
 
-## 6. Audit Logging & Integrity Hardening
+## 6. Audit Logging & Write Authority Hardening
 
 The `public.audit_logs` table provides a unified, tamper-resistant trail for critical events:
 
-- `actor_id`: UUID referencing `auth.users(id)` (authoritatively derived from `auth.uid()` via trigger).
-- `actor_type`: `'visitor' | 'customer' | 'staff' | 'system'` (authoritatively coerced server-side to prevent client forgery of staff/system credentials).
-- `action`: Canonical action verb (e.g., `auth.login`, `catalog.price_change`, `formula.update`).
-- `entity_type`: Target entity name (e.g., `product`, `formula_version`, `staff_profile`).
-- `entity_id`: Identifier of the affected record.
-- `metadata`: JSONB payload containing contextual details (diffs, IP, user-agent).
+- **Controlled RPC Ingestion**: Written exclusively via `public.log_audit_event()`. Direct arbitrary client table inserts are revoked.
+- **Server-Derived Identity**: `actor_id` is automatically set to `auth.uid()`, and `actor_type` is determined authoritatively (`staff` if active staff profile exists, else `customer` or `visitor`).
+- **Immutability**: No `UPDATE` or `DELETE` policies exist on `audit_logs`.
 
 ---
 

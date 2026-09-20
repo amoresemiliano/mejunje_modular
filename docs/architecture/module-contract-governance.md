@@ -2,7 +2,7 @@
 
 ## 1. Purpose
 
-This document outlines the governance protocol for communication, shared contracts, and integration requests between MEJUNJE module agents and the Core Backend.
+This document outlines the governance protocol for communication, shared contracts, and integration requests between MEJUNJE module agents (00-COR plus domain agents 01 through 11) and the Core Backend.
 
 ---
 
@@ -30,7 +30,7 @@ This document outlines the governance protocol for communication, shared contrac
 
 ```
 ┌────────────────────────┐
-│  Module Agent (01-10)  │
+│  Module Agent (01-11)  │
 └───────────┬────────────┘
             │ 1. Submits DATA / INTEGRATION REQUEST
             ▼

@@ -12,6 +12,6 @@
   },
   "scripts": {
     "build": "echo package @mejunje/auth boundary",
-    "test": "node --loader ts-node/esm ./test/security.test.ts"
+    "test": "node --experimental-strip-types ./test/security.test.ts"
   }
 }

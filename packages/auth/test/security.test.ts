@@ -9,6 +9,8 @@
  * 6. Non-admin staff cannot escalate own role (staff -> admin) [STAFF ESCALATION GUARD].
  * 7. Non-admin staff cannot modify own permissions or active status [STAFF ESCALATION GUARD].
  * 8. Customer cannot forge a STAFF audit log entry [AUDIT INTEGRITY GUARD].
+ * 9. Customer direct arbitrary audit INSERT is DENIED [AUDIT WRITE AUTHORITY GUARD].
+ * 10. Controlled RPC audit write path is ACCEPTED [AUDIT WRITE AUTHORITY GUARD].
  */
 
 import {
@@ -18,7 +20,8 @@ import {
   evaluateLabAccess,
   evaluateStaffProfileUpdate,
   resolveAuthoritativeActorType,
-} from '../src/index';
+  evaluateAuditWriteAuthority,
+} from '../src/index.ts';
 import type { CustomerProfile, StaffProfile } from '@mejunje/types';
 
 interface TestResult {
@@ -218,6 +221,32 @@ assert(
   forgedAuditEvent.effectiveActorType === 'customer' && forgedAuditEvent.wasOverridden === true,
   'effectiveActorType = customer, wasOverridden = true',
   `effectiveActorType = ${forgedAuditEvent.effectiveActorType}, wasOverridden = ${forgedAuditEvent.wasOverridden}`
+);
+
+// === 15. AUDIT WRITE AUTHORITY: Direct arbitrary client INSERT is DENIED ===
+const directClientInsert = evaluateAuditWriteAuthority(true, false, {
+  actorType: 'customer',
+  action: 'tampered.action',
+  entityType: 'catalog',
+});
+assert(
+  'CUSTOMER direct arbitrary client INSERT into audit_logs is DENIED',
+  directClientInsert.allowed === false,
+  'allowed = false',
+  `allowed = ${directClientInsert.allowed} (${directClientInsert.reason})`
+);
+
+// === 16. AUDIT WRITE AUTHORITY: Authorized audit write via RPC is ACCEPTED ===
+const rpcAuditWrite = evaluateAuditWriteAuthority(false, true, {
+  actorType: 'customer',
+  action: 'customer.profile_updated',
+  entityType: 'customer_profile',
+});
+assert(
+  'Authorized audit write path via controlled RPC is ACCEPTED',
+  rpcAuditWrite.allowed === true,
+  'allowed = true',
+  `allowed = ${rpcAuditWrite.allowed} (${rpcAuditWrite.reason})`
 );
 
 // Print summary
