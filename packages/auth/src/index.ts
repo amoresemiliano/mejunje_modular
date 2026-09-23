@@ -131,8 +131,17 @@ export function evaluateStaffProfileUpdate(
 export function evaluateAuditWriteAuthority(
   isDirectClientInsert: boolean,
   isViaControlledRpc: boolean,
-  payload: AuditEventPayload
+  payload: AuditEventPayload,
+  isAuthenticated: boolean = true
 ): { allowed: boolean; effectiveActorType: ActorType; reason: string } {
+  if (!isAuthenticated) {
+    return {
+      allowed: false,
+      effectiveActorType: payload.actorType,
+      reason: 'Denied: Anonymous actors cannot execute audit ingestion.',
+    };
+  }
+
   if (isDirectClientInsert) {
     return {
       allowed: false,
