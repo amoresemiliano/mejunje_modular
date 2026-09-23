@@ -241,12 +241,25 @@ const rpcAuditWrite = evaluateAuditWriteAuthority(false, true, {
   actorType: 'customer',
   action: 'customer.profile_updated',
   entityType: 'customer_profile',
-});
+}, true);
 assert(
   'Authorized audit write path via controlled RPC is ACCEPTED',
   rpcAuditWrite.allowed === true,
   'allowed = true',
   `allowed = ${rpcAuditWrite.allowed} (${rpcAuditWrite.reason})`
+);
+
+// === 17. AUDIT WRITE AUTHORITY: Anonymous audit ingestion is DENIED ===
+const anonAuditWrite = evaluateAuditWriteAuthority(false, true, {
+  actorType: 'visitor',
+  action: 'visitor.viewed_catalog',
+  entityType: 'catalog',
+}, false);
+assert(
+  'ANONYMOUS actor cannot execute audit ingestion',
+  anonAuditWrite.allowed === false,
+  'allowed = false',
+  `allowed = ${anonAuditWrite.allowed} (${anonAuditWrite.reason})`
 );
 
 // Print summary

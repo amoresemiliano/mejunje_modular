@@ -263,7 +263,7 @@ $$;
 -- Restrict direct table write access from clients
 revoke insert on public.audit_logs from public, authenticated, anon;
 revoke execute on function public.log_audit_event from public;
-grant execute on function public.log_audit_event to authenticated, anon;
+grant execute on function public.log_audit_event to authenticated;
 
 -- =========================================================================
 -- 8. ROW LEVEL SECURITY (RLS) - DENY BY DEFAULT
