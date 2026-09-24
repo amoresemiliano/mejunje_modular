@@ -149,6 +149,14 @@ export function evaluateAuditWriteAuthority(
     };
   }
 
+  if (!payload.actorId) {
+    return {
+      allowed: false,
+      effectiveActorType: payload.actorType,
+      reason: 'Denied: Anonymous callers are not authorized to execute audit logging RPC.',
+    };
+  }
+
   if (!payload.action || payload.action.trim() === '') {
     return {
       allowed: false,

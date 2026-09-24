@@ -218,19 +218,19 @@ declare
 begin
     v_uid := auth.uid();
     
-    if v_uid is not null then
-        select exists (
-            select 1 from public.staff_profiles
-            where id = v_uid and is_active = true
-        ) into v_is_staff;
-        
-        if v_is_staff then
-            v_actor_type := 'staff';
-        else
-            v_actor_type := 'customer';
-        end if;
+    if v_uid is null then
+        raise exception 'Anonymous callers are not authorized to log audit events.';
+    end if;
+
+    select exists (
+        select 1 from public.staff_profiles
+        where id = v_uid and is_active = true
+    ) into v_is_staff;
+    
+    if v_is_staff then
+        v_actor_type := 'staff';
     else
-        v_actor_type := 'visitor';
+        v_actor_type := 'customer';
     end if;
     
     if p_action is null or trim(p_action) = '' then
@@ -262,8 +262,8 @@ $$;
 
 -- Restrict direct table write access from clients
 revoke insert on public.audit_logs from public, authenticated, anon;
-revoke execute on function public.log_audit_event from public;
-grant execute on function public.log_audit_event to authenticated, anon;
+revoke execute on function public.log_audit_event from public, anon;
+grant execute on function public.log_audit_event to authenticated;
 
 -- =========================================================================
 -- 8. ROW LEVEL SECURITY (RLS) - DENY BY DEFAULT

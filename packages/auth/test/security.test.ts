@@ -225,6 +225,7 @@ assert(
 
 // === 15. AUDIT WRITE AUTHORITY: Direct arbitrary client INSERT is DENIED ===
 const directClientInsert = evaluateAuditWriteAuthority(true, false, {
+  actorId: customerA.id,
   actorType: 'customer',
   action: 'tampered.action',
   entityType: 'catalog',
@@ -236,14 +237,29 @@ assert(
   `allowed = ${directClientInsert.allowed} (${directClientInsert.reason})`
 );
 
-// === 16. AUDIT WRITE AUTHORITY: Authorized audit write via RPC is ACCEPTED ===
+// === 16. AUDIT WRITE AUTHORITY: Anonymous audit write via RPC is DENIED ===
+const anonRpcAuditWrite = evaluateAuditWriteAuthority(false, true, {
+  actorId: undefined,
+  actorType: 'visitor',
+  action: 'page_viewed',
+  entityType: 'marketing',
+});
+assert(
+  'ANONYMOUS execution of audit logging RPC is DENIED',
+  anonRpcAuditWrite.allowed === false,
+  'allowed = false',
+  `allowed = ${anonRpcAuditWrite.allowed} (${anonRpcAuditWrite.reason})`
+);
+
+// === 17. AUDIT WRITE AUTHORITY: Authenticated audit write via RPC is ACCEPTED ===
 const rpcAuditWrite = evaluateAuditWriteAuthority(false, true, {
+  actorId: customerA.id,
   actorType: 'customer',
   action: 'customer.profile_updated',
   entityType: 'customer_profile',
 });
 assert(
-  'Authorized audit write path via controlled RPC is ACCEPTED',
+  'AUTHENTICATED audit write path via controlled RPC is ACCEPTED',
   rpcAuditWrite.allowed === true,
   'allowed = true',
   `allowed = ${rpcAuditWrite.allowed} (${rpcAuditWrite.reason})`
