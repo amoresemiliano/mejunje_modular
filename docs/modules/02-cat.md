@@ -16,7 +16,7 @@ The Catalog domain owns 7 core relational entities:
 4. `public.product_categories`: Product taxonomy structure (`slug`, `name`, `parent_id`).
 5. `public.product_category_mappings`: Many-to-many relationship mapping products to categories.
 6. `public.olfactory_pyramids`: Commercial scent profile presentation (`top_notes`, `heart_notes`, `base_notes`). Internal R&D formulas are isolated in `05-LAB`.
-7. `public.catalog_media`: Metadata for public catalog assets (`file_path`, `alt_text`, `display_order`, `is_primary`, `media_type`). Binaries reside in the `catalog-media` Supabase storage bucket.
+7. `public.catalog_media`: Metadata for public catalog assets (`file_path`, `alt_text`, `display_order`, `is_primary`, `media_type`). Enforces target constraint `num_nonnulls(product_id, variant_id) = 1`. Binaries reside in the public `catalog-media` Supabase storage bucket.
 
 ---
 
@@ -31,12 +31,12 @@ The Catalog domain owns 7 core relational entities:
 
 ---
 
-## 4. Pricing Model Architecture
+## 4. Pricing Model Architecture & Semantics
 
-- **Active Commercial Price Authority**: `public.prices` maintains the current live retail price per variant and currency.
-- **Monetary Representation**: Prices utilize `numeric(12, 2)` (or fixed decimals) to prevent floating-point precision loss.
-- **Currency Support**: Defaults to ISO-4217 standard (`ARS`, `USD`).
-- **Unique Constraint**: `(variant_id, currency)` ensures exactly one authoritative price per variant per currency.
+- **Active Commercial Price Authority**: `public.prices` maintains the live retail price per variant and currency.
+- **Monetary Representation**: Prices utilize `numeric(12, 2)` (or fixed decimals) to prevent floating-point precision loss, with `amount >= 0`.
+- **Currency Format Integrity**: Enforces PostgreSQL constraint `check (currency ~ '^[A-Z]{3}$')` validating uppercase 3-letter currency formats (`ARS`, `USD`).
+- **Single-Price Constraint**: `unique (variant_id, currency)` guarantees a single price row per variant/currency combination (whether active or inactive), enforcing single-price authority for CAT V1 without price history tables.
 - **Decoupling from Orders**: When a customer places an order, `11-PED` creates an immutable historical price snapshot on the order line. CAT price changes never retroactively modify completed sales orders.
 
 ---
@@ -56,11 +56,14 @@ The Catalog domain owns 7 core relational entities:
 
 ---
 
-## 7. Media Asset Storage Strategy
+## 7. Public Storage Bucket Strategy & Media Integrity
 
-- Storage Bucket: `catalog-media` (Public read bucket).
-- Deterministic path naming: `products/{product_id}/{filename}` or `variants/{variant_id}/{filename}`.
-- Database table `public.catalog_media` stores metadata, alt text, primary flag, and display order.
+- **Public Bucket Strategy (Strategy A)**: The storage bucket `catalog-media` is public. It contains assets intended for public commercial exposure. Database RLS policies on `public.catalog_media` govern metadata SQL queries, but do not physically mask binary objects in a public bucket. Draft products or variants in the database may reference files in this public bucket.
+- **Target Constraint**: Table `public.catalog_media` enforces `check (num_nonnulls(product_id, variant_id) = 1)`. Each media record must belong to exactly one `product_id` OR exactly one `variant_id`.
+- **Strict Policy Resolution**: `catalog_media_select_policy` resolves public visibility as follows:
+  - Media linked directly to `product_id`: Requires target product `status = 'published'`.
+  - Media linked to `variant_id`: Resolves variant -> product and requires variant `is_active = true` AND parent product `status = 'published'`.
+  - Unverified public access (such as `product_id IS NULL`) is strictly eliminated.
 
 ---
 
@@ -84,7 +87,19 @@ All tables enforce **Deny-by-Default** RLS:
 
 ---
 
-## 9. Shared Public Contracts (`@mejunje/contracts`)
+## 9. Automatic Timestamp Maintenance (`updated_at`)
+
+Reuses the Core helper function `public.set_updated_at()` via `BEFORE UPDATE` triggers on all 6 tables containing `updated_at`:
+- `products`
+- `product_variants`
+- `prices`
+- `product_categories`
+- `olfactory_pyramids`
+- `catalog_media`
+
+---
+
+## 10. Shared Public Contracts (`@mejunje/contracts`)
 
 Domain `02-CAT` exposes stable DTO contracts for `@mejunje/storefront` and other consumers:
 
@@ -95,10 +110,3 @@ Domain `02-CAT` exposes stable DTO contracts for `@mejunje/storefront` and other
 - `OlfactoryPyramidDTO`
 - `CatalogMediaDTO`
 - `CatalogProductDetailDTO`
-
----
-
-## 10. Key Decisions & Trade-offs
-
-1. **Decoupled Pricing**: Choosing a separate `prices` entity over embedding `price` into `product_variants` allows multi-currency expansion and distinct pricing strategies without altering variant schema.
-2. **Strict RLS Isolation**: Explicit `is_admin()` requirement for mutations ensures non-admin staff and customers cannot modify product data even if attempting direct Supabase API requests.
