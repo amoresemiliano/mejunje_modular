@@ -400,16 +400,22 @@ create policy catalog_media_delete_policy on public.catalog_media
         public.is_admin()
     );
 
--- Grant select to anon and authenticated
-grant select on public.products to anon, authenticated;
-grant select on public.product_variants to anon, authenticated;
-grant select on public.prices to anon, authenticated;
-grant select on public.product_categories to anon, authenticated;
-grant select on public.product_category_mappings to anon, authenticated;
-grant select on public.olfactory_pyramids to anon, authenticated;
-grant select on public.catalog_media to anon, authenticated;
+-- =========================================================================
+-- 10. EXPLICIT POSTGRESQL PRIVILEGE MODEL & RLS MUTATION GOVERNANCE
+-- Note: PostgreSQL table privilege = ability to attempt the SQL operation.
+-- Row Level Security (RLS) = authoritative filter governing row-level execution.
+-- =========================================================================
 
--- Explicitly revoke client write operations
+-- Public anonymous access: READ-ONLY (SELECT)
+grant select on public.products to anon;
+grant select on public.product_variants to anon;
+grant select on public.prices to anon;
+grant select on public.product_categories to anon;
+grant select on public.product_category_mappings to anon;
+grant select on public.olfactory_pyramids to anon;
+grant select on public.catalog_media to anon;
+
+-- Explicitly revoke write operations from anon and public roles
 revoke insert, update, delete on public.products from public, anon;
 revoke insert, update, delete on public.product_variants from public, anon;
 revoke insert, update, delete on public.prices from public, anon;
@@ -417,3 +423,14 @@ revoke insert, update, delete on public.product_categories from public, anon;
 revoke insert, update, delete on public.product_category_mappings from public, anon;
 revoke insert, update, delete on public.olfactory_pyramids from public, anon;
 revoke insert, update, delete on public.catalog_media from public, anon;
+
+-- Authenticated roles: Granted SQL execution table privileges (SELECT, INSERT, UPDATE, DELETE).
+-- Effective mutation execution is strictly gated downstream by RLS policies (requiring public.is_admin()).
+grant select, insert, update, delete on public.products to authenticated;
+grant select, insert, update, delete on public.product_variants to authenticated;
+grant select, insert, update, delete on public.prices to authenticated;
+grant select, insert, update, delete on public.product_categories to authenticated;
+grant select, insert, update, delete on public.product_category_mappings to authenticated;
+grant select, insert, update, delete on public.olfactory_pyramids to authenticated;
+grant select, insert, update, delete on public.catalog_media to authenticated;
+
