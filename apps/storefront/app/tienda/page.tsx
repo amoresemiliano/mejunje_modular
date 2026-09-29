@@ -1,17 +1,40 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
-import { PRODUCTS, ProductCategory, OlfactoryFamily, formatPrice } from "@/data/catalog";
+import React, { useState, useMemo, useEffect } from "react";
+import { PRODUCTS, Product, ProductCategory, OlfactoryFamily, formatPrice } from "@/data/catalog";
+import { getStorefrontProducts } from "@/services/catalog";
 import { ProductCard } from "@/components/ProductCard";
-import { Filter, SlidersHorizontal, ArrowUpDown, X, Search, Sparkles } from "lucide-react";
+import { Filter, SlidersHorizontal, ArrowUpDown, X, Search, Sparkles, Loader2 } from "lucide-react";
 import Link from "next/link";
 
 export default function TiendaPage() {
+  const [productsList, setProductsList] = useState<Product[]>(PRODUCTS);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [selectedCategory, setSelectedCategory] = useState<string>("TODOS");
   const [selectedFamily, setSelectedFamily] = useState<string>("TODAS");
   const [selectedIntensity, setSelectedIntensity] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [sortBy, setSortBy] = useState<"featured" | "price-asc" | "price-desc" | "intensity">("featured");
+
+  useEffect(() => {
+    let isMounted = true;
+    async function fetchCatalog() {
+      try {
+        const dbProducts = await getStorefrontProducts();
+        if (isMounted && dbProducts && dbProducts.length > 0) {
+          setProductsList(dbProducts);
+        }
+      } catch (err) {
+        // Quiet fallback to default catalog
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    }
+    fetchCatalog();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const categories = [
     { id: "TODOS", label: "TODOS LOS AROMAS" },
@@ -33,7 +56,8 @@ export default function TiendaPage() {
   ];
 
   const filteredProducts = useMemo(() => {
-    return PRODUCTS.filter((p) => {
+    return productsList.filter((p) => {
+
       // Category filter
       if (selectedCategory !== "TODOS" && p.category !== selectedCategory) {
         return false;

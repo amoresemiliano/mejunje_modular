@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { PRODUCTS, formatPrice } from "@/data/catalog";
+import { PRODUCTS, Product, formatPrice } from "@/data/catalog";
+import { getStorefrontProductBySlug } from "@/services/catalog";
 import { ProductVisual } from "@/components/ProductVisual";
 import { IntensityScale } from "@/components/IntensityScale";
 import { OlfactoryPyramidView } from "@/components/OlfactoryPyramidView";
@@ -20,12 +21,49 @@ import {
   Flame, 
   Heart,
   Plus,
-  Minus
+  Minus,
+  Loader2
 } from "lucide-react";
 
 export default function ProductDetailPage({ params }: { params: { slug: string } }) {
   const { slug } = params;
-  const product = PRODUCTS.find((p) => p.slug === slug);
+  const initialLocalProduct = PRODUCTS.find((p) => p.slug === slug) || null;
+  const [product, setProduct] = useState<Product | null>(initialLocalProduct);
+  const [isLoading, setIsLoading] = useState<boolean>(!initialLocalProduct);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function loadProduct() {
+      try {
+        const dbProduct = await getStorefrontProductBySlug(slug);
+        if (isMounted && dbProduct) {
+          setProduct(dbProduct);
+        }
+      } catch (err) {
+        // Quiet fallback
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    }
+    loadProduct();
+    return () => {
+      isMounted = false;
+    };
+  }, [slug]);
+
+  const { addProductToCart } = useCart();
+  const [quantity, setQuantity] = useState(1);
+  const [isGiftWrapped, setIsGiftWrapped] = useState(false);
+  const [giftNote, setGiftNote] = useState("");
+
+  if (isLoading) {
+    return (
+      <div className="max-w-4xl mx-auto px-4 py-32 text-center space-y-4">
+        <Loader2 className="w-8 h-8 text-mejunje-amber animate-spin mx-auto" />
+        <p className="font-typewriter text-xs text-mejunje-muted">Cargando aromas del atelier...</p>
+      </div>
+    );
+  }
 
   if (!product) {
     return (
@@ -46,14 +84,10 @@ export default function ProductDetailPage({ params }: { params: { slug: string }
     );
   }
 
-  const { addProductToCart } = useCart();
-  const [quantity, setQuantity] = useState(1);
-  const [isGiftWrapped, setIsGiftWrapped] = useState(false);
-  const [giftNote, setGiftNote] = useState("");
-
   const companionProducts = PRODUCTS.filter((p) =>
-    product.companionProductSlugs.includes(p.slug)
+    product.companionProductSlugs && product.companionProductSlugs.includes(p.slug)
   );
+
 
   const handleAddToCart = () => {
     addProductToCart(product, quantity, isGiftWrapped, giftNote);
