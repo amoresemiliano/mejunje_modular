@@ -234,3 +234,34 @@ export function verifyStaffStatus(
     staffProfile: profile,
   };
 }
+
+/**
+ * Evaluates access permissions for Catalog domain (02-CAT) operations.
+ * Security Invariants:
+ * 1. Anonymous & Customers can read ONLY published catalog content.
+ * 2. Non-published (draft/archived) content requires active staff authorization.
+ * 3. Catalog administrative mutations (create/update/delete) require active admin privileges.
+ */
+export function evaluateCatalogAccess(
+  operation: 'read' | 'create' | 'update' | 'delete',
+  productStatus: 'published' | 'draft' | 'archived',
+  staffProfile?: StaffProfile | null
+): { allowed: boolean; reason: string } {
+  if (operation === 'read') {
+    if (productStatus === 'published') {
+      return { allowed: true, reason: 'Permitted: Published catalog content is publicly readable.' };
+    }
+    if (hasStaffAccess(staffProfile)) {
+      return { allowed: true, reason: 'Permitted: Staff can access non-published catalog items.' };
+    }
+    return { allowed: false, reason: 'Denied: Non-published catalog items require active staff access.' };
+  }
+
+  // Mutations (create, update, delete)
+  if (hasAdminAccess(staffProfile)) {
+    return { allowed: true, reason: 'Permitted: Admin possesses catalog mutation authority.' };
+  }
+
+  return { allowed: false, reason: 'Denied: Catalog administrative mutations require admin authorization.' };
+}
+

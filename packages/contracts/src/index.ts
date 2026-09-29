@@ -39,3 +39,63 @@ export interface AuthErrorContract {
   message: string;
   status: number;
 }
+
+// =========================================================================
+// CATALOG DOMAIN (02-CAT) PUBLIC CONTRACTS & DTOs
+// =========================================================================
+
+export interface CatalogPriceDTO {
+  amount: number;
+  currency: string;
+  isActive: boolean;
+}
+
+export interface CatalogVariantDTO {
+  id: string;
+  sku: string;
+  name: string;
+  isActive: boolean;
+  price: CatalogPriceDTO | null;
+}
+
+export interface CatalogCategoryDTO {
+  id: string;
+  slug: string;
+  name: string;
+  description?: string | null;
+  parentId?: string | null;
+}
+
+export interface OlfactoryPyramidDTO {
+  topNotes: string[];
+  heartNotes: string[];
+  baseNotes: string[];
+  description?: string | null;
+}
+
+export interface CatalogMediaDTO {
+  id: string;
+  filePath: string;
+  altText?: string | null;
+  displayOrder: number;
+  isPrimary: boolean;
+  mediaType: 'image' | 'video' | 'document';
+}
+
+export interface CatalogProductDTO {
+  id: string;
+  slug: string;
+  name: string;
+  description?: string | null;
+  status: 'draft' | 'published' | 'archived';
+  isPublished: boolean;
+  categories: CatalogCategoryDTO[];
+  variants: CatalogVariantDTO[];
+  olfactoryPyramid?: OlfactoryPyramidDTO | null;
+  media: CatalogMediaDTO[];
+}
+
+export interface CatalogProductDetailDTO extends CatalogProductDTO {
+  metadata?: Record<string, unknown>;
+}
+
