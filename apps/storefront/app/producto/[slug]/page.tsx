@@ -1,13 +1,15 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { PRODUCTS, formatPrice } from "@/data/catalog";
+import { PRODUCTS, Product, formatPrice } from "@/data/catalog";
+import { getStorefrontProductBySlugResult, getStorefrontProductsResult, DataMode } from "@/services/catalog";
 import { ProductVisual } from "@/components/ProductVisual";
 import { IntensityScale } from "@/components/IntensityScale";
 import { OlfactoryPyramidView } from "@/components/OlfactoryPyramidView";
 import { ProductCard } from "@/components/ProductCard";
+import { DemoModeBanner } from "@/components/DemoModeBanner";
 import { useCart } from "@/context/CartContext";
 import { 
   ShoppingBag, 
@@ -20,14 +22,103 @@ import {
   Flame, 
   Heart,
   Plus,
-  Minus
+  Minus,
+  Loader2,
+  AlertCircle
 } from "lucide-react";
 
 export default function ProductDetailPage({ params }: { params: { slug: string } }) {
   const { slug } = params;
-  const product = PRODUCTS.find((p) => p.slug === slug);
+  const [product, setProduct] = useState<Product | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isError, setIsError] = useState<boolean>(false);
+  const [isNotFound, setIsNotFound] = useState<boolean>(false);
+  const [dataMode, setDataMode] = useState<DataMode>("live");
+  const [companionProducts, setCompanionProducts] = useState<Product[]>([]);
 
-  if (!product) {
+  useEffect(() => {
+    let isMounted = true;
+    async function loadProduct() {
+      setIsLoading(true);
+      setIsError(false);
+      setIsNotFound(false);
+      try {
+        const result = await getStorefrontProductBySlugResult(slug);
+        if (isMounted) {
+          setDataMode(result.mode);
+          setIsError(result.isError);
+          setIsNotFound(result.isNotFound);
+          setProduct(result.product);
+
+          if (result.product) {
+            const slugs = result.product.companionProductSlugs || [];
+            if (result.mode === "demo") {
+              const demoCompanions = PRODUCTS.filter((p) => slugs.includes(p.slug));
+              setCompanionProducts(demoCompanions);
+            } else {
+              // Live mode companion resolution: only from real live products
+              if (slugs.length > 0) {
+                const liveResult = await getStorefrontProductsResult({ mode: "live" });
+                const found = liveResult.products.filter((p) => slugs.includes(p.slug));
+                setCompanionProducts(found);
+              } else {
+                setCompanionProducts([]);
+              }
+            }
+          }
+        }
+      } catch (err) {
+        if (isMounted) {
+          setIsError(true);
+          setProduct(null);
+        }
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    }
+    loadProduct();
+    return () => {
+      isMounted = false;
+    };
+  }, [slug]);
+
+  const { addProductToCart } = useCart();
+  const [quantity, setQuantity] = useState(1);
+  const [isGiftWrapped, setIsGiftWrapped] = useState(false);
+  const [giftNote, setGiftNote] = useState("");
+
+  if (isLoading) {
+    return (
+      <div className="max-w-4xl mx-auto px-4 py-32 text-center space-y-4">
+        <Loader2 className="w-8 h-8 text-mejunje-amber animate-spin mx-auto" />
+        <p className="font-typewriter text-xs text-mejunje-muted">Cargando aromas del atelier...</p>
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="max-w-4xl mx-auto px-4 py-24 text-center space-y-6">
+        <div className="w-14 h-14 rounded-full bg-mejunje-terracotta/10 flex items-center justify-center text-mejunje-terracotta mx-auto">
+          <AlertCircle className="w-7 h-7" />
+        </div>
+        <h1 className="font-typewriter text-2xl font-bold text-mejunje-charcoal">
+          Error al consultar el producto
+        </h1>
+        <p className="font-editorial italic text-mejunje-muted">
+          No se pudo recuperar la información comercial del producto desde la fuente de datos.
+        </p>
+        <Link
+          href="/tienda"
+          className="inline-block px-6 py-3 rounded-xl bg-mejunje-charcoal text-mejunje-paper font-typewriter text-xs font-bold"
+        >
+          VOLVER A LA TIENDA
+        </Link>
+      </div>
+    );
+  }
+
+  if (isNotFound || !product) {
     return (
       <div className="max-w-4xl mx-auto px-4 py-24 text-center space-y-6">
         <h1 className="font-typewriter text-3xl font-bold text-mejunje-charcoal">
@@ -46,14 +137,6 @@ export default function ProductDetailPage({ params }: { params: { slug: string }
     );
   }
 
-  const { addProductToCart } = useCart();
-  const [quantity, setQuantity] = useState(1);
-  const [isGiftWrapped, setIsGiftWrapped] = useState(false);
-  const [giftNote, setGiftNote] = useState("");
-
-  const companionProducts = PRODUCTS.filter((p) =>
-    product.companionProductSlugs.includes(p.slug)
-  );
 
   const handleAddToCart = () => {
     addProductToCart(product, quantity, isGiftWrapped, giftNote);
@@ -62,6 +145,9 @@ export default function ProductDetailPage({ params }: { params: { slug: string }
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12 space-y-16">
       
+      {/* Demo Mode Banner (only when DATA_MODE=demo) */}
+      {dataMode === "demo" && <DemoModeBanner />}
+
       {/* Back breadcrumb link */}
       <div className="flex items-center gap-2 font-typewriter text-xs text-mejunje-muted">
         <Link href="/tienda" className="hover:text-mejunje-amber flex items-center gap-1">
@@ -87,9 +173,11 @@ export default function ProductDetailPage({ params }: { params: { slug: string }
                   {product.badge}
                 </span>
               )}
-              <span className="font-typewriter text-[10px] px-3 py-1 rounded-full bg-mejunje-paper border border-mejunje-border text-mejunje-charcoal">
-                {product.aromaticFamily}
-              </span>
+              {product.aromaticFamily && (
+                <span className="font-typewriter text-[10px] px-3 py-1 rounded-full bg-mejunje-paper border border-mejunje-border text-mejunje-charcoal">
+                  {product.aromaticFamily}
+                </span>
+              )}
             </div>
 
             <div className="w-full h-80 sm:h-96 my-4">
@@ -136,11 +224,13 @@ export default function ProductDetailPage({ params }: { params: { slug: string }
           <div>
             <div className="flex items-center justify-between gap-2 mb-2">
               <span className="font-typewriter text-xs uppercase tracking-[0.25em] text-mejunje-amber font-bold">
-                {product.categoryLabel} · {product.aromaticFamily}
+                {product.categoryLabel}{product.aromaticFamily ? ` · ${product.aromaticFamily}` : ''}
               </span>
               <span className="font-typewriter text-xs text-mejunje-deepGreen font-bold flex items-center gap-1">
                 <span className="w-2 h-2 rounded-full bg-mejunje-deepGreen inline-block" />
-                LOTE ATELIER DISPONIBLE ({product.stock} un.)
+                {product.stock !== undefined && product.stock !== null
+                  ? `LOTE ATELIER DISPONIBLE (${product.stock} un.)`
+                  : 'PRODUCTO PUBLICADO'}
               </span>
             </div>
 
@@ -149,19 +239,23 @@ export default function ProductDetailPage({ params }: { params: { slug: string }
             </h1>
 
             {/* Short story */}
-            <p className="font-editorial italic text-lg sm:text-xl text-mejunje-muted mt-2 leading-relaxed">
-              “{product.shortStory}”
-            </p>
+            {product.shortStory && (
+              <p className="font-editorial italic text-lg sm:text-xl text-mejunje-muted mt-2 leading-relaxed">
+                “{product.shortStory}”
+              </p>
+            )}
           </div>
 
           {/* Pricing & Size */}
           <div className="flex items-baseline gap-4 py-3 border-y border-mejunje-border">
             <span className="font-typewriter text-3xl font-bold text-mejunje-charcoal">
-              {formatPrice(product.price)}
+              {formatPrice(product.price, product.hasPrice)}
             </span>
-            <span className="font-typewriter text-xs text-mejunje-muted">
-              {product.sizeVolume}
-            </span>
+            {product.sizeVolume && (
+              <span className="font-typewriter text-xs text-mejunje-muted">
+                {product.sizeVolume}
+              </span>
+            )}
           </div>
 
           {/* Poetic description */}
@@ -172,17 +266,19 @@ export default function ProductDetailPage({ params }: { params: { slug: string }
           </div>
 
           {/* “A QUÉ HUELE” Box */}
-          <div className="bg-mejunje-paper border border-mejunje-border rounded-2xl p-5 space-y-2">
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-mejunje-terracotta" />
-              <h4 className="font-typewriter text-xs font-bold uppercase tracking-widest text-mejunje-charcoal">
-                A QUÉ HUELE
-              </h4>
+          {product.feelsLike && (
+            <div className="bg-mejunje-paper border border-mejunje-border rounded-2xl p-5 space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-mejunje-terracotta" />
+                <h4 className="font-typewriter text-xs font-bold uppercase tracking-widest text-mejunje-charcoal">
+                  A QUÉ HUELE
+                </h4>
+              </div>
+              <p className="font-editorial italic text-base text-mejunje-charcoal leading-relaxed">
+                “{product.feelsLike}”
+              </p>
             </div>
-            <p className="font-editorial italic text-base text-mejunje-charcoal leading-relaxed">
-              “{product.feelsLike}”
-            </p>
-          </div>
+          )}
 
           {/* Visual Intensity Scale */}
           <div className="bg-white border border-mejunje-border rounded-2xl p-4">
@@ -193,21 +289,23 @@ export default function ProductDetailPage({ params }: { params: { slug: string }
           <OlfactoryPyramidView pyramid={product.pyramid} />
 
           {/* Ideal Rooms Tags */}
-          <div className="space-y-2">
-            <span className="font-typewriter text-[11px] uppercase tracking-wider text-mejunje-muted block">
-              ESPACIOS RECOMENDADOS:
-            </span>
-            <div className="flex flex-wrap gap-2">
-              {product.idealForRooms.map((room) => (
-                <span
-                  key={room}
-                  className="px-3 py-1 rounded-xl bg-white border border-mejunje-border text-mejunje-charcoal font-typewriter text-xs"
-                >
-                  {room}
-                </span>
-              ))}
+          {product.idealForRooms && product.idealForRooms.length > 0 && (
+            <div className="space-y-2">
+              <span className="font-typewriter text-[11px] uppercase tracking-wider text-mejunje-muted block">
+                ESPACIOS RECOMENDADOS:
+              </span>
+              <div className="flex flex-wrap gap-2">
+                {product.idealForRooms.map((room) => (
+                  <span
+                    key={room}
+                    className="px-3 py-1 rounded-xl bg-white border border-mejunje-border text-mejunje-charcoal font-typewriter text-xs"
+                  >
+                    {room}
+                  </span>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Gifting toggle with typewriter note input */}
           <div className="p-4 bg-mejunje-paper/80 border border-mejunje-border rounded-2xl space-y-3">
@@ -272,7 +370,7 @@ export default function ProductDetailPage({ params }: { params: { slug: string }
               className="flex-1 py-4 px-8 rounded-2xl bg-mejunje-charcoal hover:bg-mejunje-amber text-mejunje-paper font-typewriter text-sm font-bold tracking-widest transition-all duration-300 flex items-center justify-center gap-3 shadow-lg active:scale-98"
             >
               <ShoppingBag className="w-4 h-4" />
-              <span>AGREGAR A MI MEJUNJE · {formatPrice(product.price * quantity)}</span>
+              <span>AGREGAR A MI MEJUNJE · {formatPrice(product.price ? product.price * quantity : undefined, product.hasPrice)}</span>
             </button>
           </div>
 

@@ -1,17 +1,50 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
-import { PRODUCTS, ProductCategory, OlfactoryFamily, formatPrice } from "@/data/catalog";
+import React, { useState, useMemo, useEffect } from "react";
+import { Product, ProductCategory, OlfactoryFamily, formatPrice } from "@/data/catalog";
+import { getStorefrontProductsResult, DataMode } from "@/services/catalog";
 import { ProductCard } from "@/components/ProductCard";
-import { Filter, SlidersHorizontal, ArrowUpDown, X, Search, Sparkles } from "lucide-react";
+import { DemoModeBanner } from "@/components/DemoModeBanner";
+import { Filter, SlidersHorizontal, ArrowUpDown, X, Search, Sparkles, Loader2, AlertCircle } from "lucide-react";
 import Link from "next/link";
 
 export default function TiendaPage() {
+  const [productsList, setProductsList] = useState<Product[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isError, setIsError] = useState<boolean>(false);
+  const [dataMode, setDataMode] = useState<DataMode>("live");
   const [selectedCategory, setSelectedCategory] = useState<string>("TODOS");
   const [selectedFamily, setSelectedFamily] = useState<string>("TODAS");
   const [selectedIntensity, setSelectedIntensity] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [sortBy, setSortBy] = useState<"featured" | "price-asc" | "price-desc" | "intensity">("featured");
+
+  useEffect(() => {
+    let isMounted = true;
+    async function fetchCatalog() {
+      setIsLoading(true);
+      setIsError(false);
+      try {
+        const result = await getStorefrontProductsResult();
+        if (isMounted) {
+          setDataMode(result.mode);
+          setIsError(result.isError);
+          setProductsList(result.products);
+        }
+      } catch (err) {
+        if (isMounted) {
+          setIsError(true);
+          setProductsList([]);
+        }
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    }
+    fetchCatalog();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const categories = [
     { id: "TODOS", label: "TODOS LOS AROMAS" },
@@ -33,7 +66,8 @@ export default function TiendaPage() {
   ];
 
   const filteredProducts = useMemo(() => {
-    return PRODUCTS.filter((p) => {
+    return productsList.filter((p) => {
+
       // Category filter
       if (selectedCategory !== "TODOS" && p.category !== selectedCategory) {
         return false;
@@ -51,14 +85,14 @@ export default function TiendaPage() {
         const q = searchQuery.toLowerCase();
         const matchName = p.name.toLowerCase().includes(q);
         const matchNotes = p.mainNotes.some((n) => n.toLowerCase().includes(q));
-        const matchStory = p.shortStory.toLowerCase().includes(q) || p.feelsLike.toLowerCase().includes(q);
+        const matchStory = (p.shortStory || '').toLowerCase().includes(q) || (p.feelsLike || '').toLowerCase().includes(q);
         if (!matchName && !matchNotes && !matchStory) return false;
       }
       return true;
     }).sort((a, b) => {
-      if (sortBy === "price-asc") return a.price - b.price;
-      if (sortBy === "price-desc") return b.price - a.price;
-      if (sortBy === "intensity") return b.intensity - a.intensity;
+      if (sortBy === "price-asc") return (a.price ?? 0) - (b.price ?? 0);
+      if (sortBy === "price-desc") return (b.price ?? 0) - (a.price ?? 0);
+      if (sortBy === "intensity") return (b.intensity ?? 0) - (a.intensity ?? 0);
       return a.isBestseller ? -1 : 1;
     });
   }, [selectedCategory, selectedFamily, selectedIntensity, searchQuery, sortBy]);
@@ -79,6 +113,9 @@ export default function TiendaPage() {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-10">
       
+      {/* Demo Mode Banner (only when DATA_MODE=demo) */}
+      {dataMode === "demo" && <DemoModeBanner />}
+
       {/* Header Editorial */}
       <div className="bg-mejunje-paper border border-mejunje-border rounded-3xl p-8 sm:p-12 space-y-4 text-center max-w-4xl mx-auto shadow-sm">
         <span className="font-typewriter text-xs uppercase tracking-[0.3em] text-mejunje-amber font-bold block">
@@ -242,8 +279,37 @@ export default function TiendaPage() {
         )}
       </div>
 
-      {/* Products Grid */}
-      {filteredProducts.length === 0 ? (
+      {/* Main Content Area: Loading / Error / Empty / Grid */}
+      {isLoading ? (
+        <div className="bg-white border border-mejunje-border rounded-3xl p-16 text-center space-y-4">
+          <Loader2 className="w-8 h-8 text-mejunje-amber animate-spin mx-auto" />
+          <p className="font-typewriter text-xs text-mejunje-muted">Cargando catálogo del atelier...</p>
+        </div>
+      ) : isError ? (
+        <div className="bg-white border border-mejunje-terracotta/40 rounded-3xl p-12 text-center space-y-4 shadow-sm">
+          <div className="w-14 h-14 rounded-full bg-mejunje-terracotta/10 flex items-center justify-center text-mejunje-terracotta mx-auto">
+            <AlertCircle className="w-7 h-7" />
+          </div>
+          <h3 className="font-typewriter text-lg font-bold text-mejunje-charcoal">
+            Error de conexión con el catálogo
+          </h3>
+          <p className="font-editorial italic text-sm text-mejunje-muted max-w-md mx-auto">
+            No se pudo consultar la fuente de datos real. Intente nuevamente en unos instantes.
+          </p>
+        </div>
+      ) : productsList.length === 0 ? (
+        <div className="bg-white border border-mejunje-border rounded-3xl p-16 text-center space-y-4">
+          <div className="w-16 h-16 rounded-full bg-mejunje-paper flex items-center justify-center text-mejunje-muted mx-auto border border-mejunje-border">
+            <Filter className="w-8 h-8 stroke-1" />
+          </div>
+          <h3 className="font-typewriter text-lg font-bold text-mejunje-charcoal">
+            El catálogo del atelier no contiene productos publicados
+          </h3>
+          <p className="font-editorial italic text-sm text-mejunje-muted max-w-md mx-auto">
+            En este momento no hay mejunjes publicados en la base de datos comercial.
+          </p>
+        </div>
+      ) : filteredProducts.length === 0 ? (
         <div className="bg-white border border-mejunje-border rounded-3xl p-16 text-center space-y-4">
           <div className="w-16 h-16 rounded-full bg-mejunje-paper flex items-center justify-center text-mejunje-muted mx-auto border border-mejunje-border">
             <Filter className="w-8 h-8 stroke-1" />

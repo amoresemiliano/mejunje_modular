@@ -21,31 +21,39 @@ export interface OlfactoryPyramid {
   baseNotes: string[];   // Fondo (fijación y memoria)
 }
 
+export type ProductVisualType =
+  | 'candle'
+  | 'diffuser'
+  | 'spray'
+  | 'textile'
+  | 'blend';
+
 export interface Product {
   id: string;
   slug: string;
   name: string;
-  category: 'VELAS' | 'DIFUSORES' | 'HOME_SPRAYS' | 'TEXTILES' | 'SETS';
-  categoryLabel: string;
-  aromaticFamily: OlfactoryFamily;
+  category: 'VELAS' | 'DIFUSORES' | 'HOME_SPRAYS' | 'TEXTILES' | 'SETS' | string;
+  categoryLabel?: string;
+  aromaticFamily?: OlfactoryFamily | string;
   mainNotes: string[];
-  price: number; // Integer (ARS, e.g. 18500)
-  sizeVolume: string; // e.g. "250g · 50hs de combustión limpia"
-  shortStory: string;
-  poeticDescription: string;
-  feelsLike: string; // "A qué huele"
-  intensity: number; // 1 to 5
-  idealForRooms: string[];
-  pyramid: OlfactoryPyramid;
-  moodTags: string[];
-  companionProductSlugs: string[];
-  isFeatured: boolean;
-  isBestseller: boolean;
-  stock: number;
+  price?: number; // Integer (ARS, e.g. 18500). Undefined if price not active in CAT
+  hasPrice?: boolean; // True if an active price exists in CAT
+  sizeVolume?: string; // e.g. "250g · 50hs de combustión limpia"
+  shortStory?: string;
+  poeticDescription?: string;
+  feelsLike?: string; // "A qué huele"
+  intensity?: number; // 1 to 5
+  idealForRooms?: string[];
+  pyramid?: OlfactoryPyramid | null;
+  moodTags?: string[];
+  companionProductSlugs?: string[];
+  isFeatured?: boolean;
+  isBestseller?: boolean;
+  stock?: number | null; // Undefined/null in LIVE mode (08-INV authority)
   badge?: string;
-  accentColor: string;
-  imageBg: string;
-  visualType: 'candle' | 'diffuser' | 'spray' | 'textile' | 'blend';
+  accentColor?: string;
+  imageBg?: string;
+  visualType?: ProductVisualType;
   images: string[];
 }
 
@@ -836,7 +844,10 @@ export const QUIZ_QUESTIONS = [
   }
 ];
 
-export function formatPrice(price: number): string {
+export function formatPrice(price?: number, hasPrice?: boolean): string {
+  if (price === undefined || price === null || hasPrice === false) {
+    return 'Precio no disponible';
+  }
   // es-AR currency format: $18.500 (sin ARS / AR$)
   return `$${price.toLocaleString('es-AR')}`;
 }
