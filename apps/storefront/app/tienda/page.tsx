@@ -85,14 +85,14 @@ export default function TiendaPage() {
         const q = searchQuery.toLowerCase();
         const matchName = p.name.toLowerCase().includes(q);
         const matchNotes = p.mainNotes.some((n) => n.toLowerCase().includes(q));
-        const matchStory = p.shortStory.toLowerCase().includes(q) || p.feelsLike.toLowerCase().includes(q);
+        const matchStory = (p.shortStory || '').toLowerCase().includes(q) || (p.feelsLike || '').toLowerCase().includes(q);
         if (!matchName && !matchNotes && !matchStory) return false;
       }
       return true;
     }).sort((a, b) => {
-      if (sortBy === "price-asc") return a.price - b.price;
-      if (sortBy === "price-desc") return b.price - a.price;
-      if (sortBy === "intensity") return b.intensity - a.intensity;
+      if (sortBy === "price-asc") return (a.price ?? 0) - (b.price ?? 0);
+      if (sortBy === "price-desc") return (b.price ?? 0) - (a.price ?? 0);
+      if (sortBy === "intensity") return (b.intensity ?? 0) - (a.intensity ?? 0);
       return a.isBestseller ? -1 : 1;
     });
   }, [selectedCategory, selectedFamily, selectedIntensity, searchQuery, sortBy]);

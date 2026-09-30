@@ -18,10 +18,10 @@ export const SearchModal: React.FC = () => {
     return PRODUCTS.filter((p) => {
       const matchName = p.name.toLowerCase().includes(q);
       const matchCategory = p.category.toLowerCase().includes(q);
-      const matchFamily = p.aromaticFamily.toLowerCase().includes(q);
+      const matchFamily = (p.aromaticFamily || '').toLowerCase().includes(q);
       const matchNotes = p.mainNotes.some((n) => n.toLowerCase().includes(q));
-      const matchStory = p.shortStory.toLowerCase().includes(q) || p.feelsLike.toLowerCase().includes(q);
-      const matchMoods = p.moodTags.some((m) => m.toLowerCase().includes(q));
+      const matchStory = (p.shortStory || '').toLowerCase().includes(q) || (p.feelsLike || '').toLowerCase().includes(q);
+      const matchMoods = (p.moodTags || []).some((m) => m.toLowerCase().includes(q));
 
       return matchName || matchCategory || matchFamily || matchNotes || matchStory || matchMoods;
     });

@@ -14,7 +14,23 @@ import type {
   CatalogMediaDTO,
 } from '@mejunje/contracts';
 
-import type { Product, OlfactoryPyramid, OlfactoryFamily } from '../data/catalog';
+import type { Product, OlfactoryPyramid, OlfactoryFamily, ProductVisualType } from '../data/catalog.ts';
+
+/**
+ * Normalizes an unknown value into a valid ProductVisualType or undefined.
+ */
+export function normalizeVisualType(value: unknown): ProductVisualType | undefined {
+  switch (value) {
+    case 'candle':
+    case 'diffuser':
+    case 'spray':
+    case 'textile':
+    case 'blend':
+      return value;
+    default:
+      return undefined;
+  }
+}
 
 /**
  * Builds a public URL for a catalog media asset stored in the catalog-media bucket.
@@ -206,7 +222,7 @@ export function mapCatalogDTOToStorefrontProduct(
     badge: (metadata.badge as string) || undefined,
     accentColor: (metadata.accentColor as string) || '#C87D38',
     imageBg: (metadata.imageBg as string) || '#F7F4EF',
-    visualType: (metadata.visualType as any) || (category === 'DIFUSORES' ? 'diffuser' : category === 'HOME_SPRAYS' ? 'spray' : 'candle'),
+    visualType: normalizeVisualType(metadata.visualType) ?? (isDemo ? (category === 'DIFUSORES' ? 'diffuser' : category === 'HOME_SPRAYS' ? 'spray' : category === 'TEXTILES' ? 'textile' : category === 'SETS' ? 'blend' : 'candle') : undefined),
     images,
   };
 }

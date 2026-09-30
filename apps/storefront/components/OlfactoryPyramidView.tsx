@@ -3,7 +3,7 @@ import { OlfactoryPyramid } from "@/data/catalog";
 import { Sparkles, Heart, Anchor } from "lucide-react";
 
 interface OlfactoryPyramidViewProps {
-  pyramid: OlfactoryPyramid;
+  pyramid?: OlfactoryPyramid | null;
   className?: string;
 }
 
@@ -11,6 +11,7 @@ export const OlfactoryPyramidView: React.FC<OlfactoryPyramidViewProps> = ({
   pyramid,
   className = "",
 }) => {
+  if (!pyramid) return null;
   return (
     <div className={`border border-mejunje-border rounded-xl p-5 bg-mejunje-paper/50 ${className}`}>
       <div className="flex items-center justify-between border-b border-mejunje-border/70 pb-3 mb-4">

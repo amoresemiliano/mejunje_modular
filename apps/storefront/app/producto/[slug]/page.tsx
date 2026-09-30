@@ -266,17 +266,19 @@ export default function ProductDetailPage({ params }: { params: { slug: string }
           </div>
 
           {/* “A QUÉ HUELE” Box */}
-          <div className="bg-mejunje-paper border border-mejunje-border rounded-2xl p-5 space-y-2">
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-mejunje-terracotta" />
-              <h4 className="font-typewriter text-xs font-bold uppercase tracking-widest text-mejunje-charcoal">
-                A QUÉ HUELE
-              </h4>
+          {product.feelsLike && (
+            <div className="bg-mejunje-paper border border-mejunje-border rounded-2xl p-5 space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-mejunje-terracotta" />
+                <h4 className="font-typewriter text-xs font-bold uppercase tracking-widest text-mejunje-charcoal">
+                  A QUÉ HUELE
+                </h4>
+              </div>
+              <p className="font-editorial italic text-base text-mejunje-charcoal leading-relaxed">
+                “{product.feelsLike}”
+              </p>
             </div>
-            <p className="font-editorial italic text-base text-mejunje-charcoal leading-relaxed">
-              “{product.feelsLike}”
-            </p>
-          </div>
+          )}
 
           {/* Visual Intensity Scale */}
           <div className="bg-white border border-mejunje-border rounded-2xl p-4">
@@ -287,21 +289,23 @@ export default function ProductDetailPage({ params }: { params: { slug: string }
           <OlfactoryPyramidView pyramid={product.pyramid} />
 
           {/* Ideal Rooms Tags */}
-          <div className="space-y-2">
-            <span className="font-typewriter text-[11px] uppercase tracking-wider text-mejunje-muted block">
-              ESPACIOS RECOMENDADOS:
-            </span>
-            <div className="flex flex-wrap gap-2">
-              {product.idealForRooms.map((room) => (
-                <span
-                  key={room}
-                  className="px-3 py-1 rounded-xl bg-white border border-mejunje-border text-mejunje-charcoal font-typewriter text-xs"
-                >
-                  {room}
-                </span>
-              ))}
+          {product.idealForRooms && product.idealForRooms.length > 0 && (
+            <div className="space-y-2">
+              <span className="font-typewriter text-[11px] uppercase tracking-wider text-mejunje-muted block">
+                ESPACIOS RECOMENDADOS:
+              </span>
+              <div className="flex flex-wrap gap-2">
+                {product.idealForRooms.map((room) => (
+                  <span
+                    key={room}
+                    className="px-3 py-1 rounded-xl bg-white border border-mejunje-border text-mejunje-charcoal font-typewriter text-xs"
+                  >
+                    {room}
+                  </span>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Gifting toggle with typewriter note input */}
           <div className="p-4 bg-mejunje-paper/80 border border-mejunje-border rounded-2xl space-y-3">

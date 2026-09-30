@@ -21,6 +21,13 @@ export interface OlfactoryPyramid {
   baseNotes: string[];   // Fondo (fijación y memoria)
 }
 
+export type ProductVisualType =
+  | 'candle'
+  | 'diffuser'
+  | 'spray'
+  | 'textile'
+  | 'blend';
+
 export interface Product {
   id: string;
   slug: string;
@@ -46,7 +53,7 @@ export interface Product {
   badge?: string;
   accentColor?: string;
   imageBg?: string;
-  visualType?: 'candle' | 'diffuser' | 'spray' | 'textile' | 'blend' | string;
+  visualType?: ProductVisualType;
   images: string[];
 }
 

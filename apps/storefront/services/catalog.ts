@@ -9,7 +9,7 @@
 
 import { createBrowserSupabaseClient } from '@mejunje/auth';
 import type { CatalogProductDTO, CatalogProductDetailDTO } from '@mejunje/contracts';
-import { PRODUCTS, type Product } from '../data/catalog';
+import { PRODUCTS, type Product } from '../data/catalog.ts';
 import { mapDbProductToDTO, mapCatalogDTOToStorefrontProduct } from './catalog-mapper.ts';
 
 export type DataMode = 'live' | 'demo';
