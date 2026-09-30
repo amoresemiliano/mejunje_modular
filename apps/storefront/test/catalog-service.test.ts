@@ -1,11 +1,18 @@
 /**
  * Storefront Catalog Integration Unit Test Suite (01-ECO-WP-001)
- * Validates DB -> DTO mapper functions, UI presentation transformations,
- * edge cases (missing media, missing pyramid, missing price), and data access fallbacks.
+ * Validates LIVE (02-CAT) vs DEMO (synthetic fixtures) data mode behavior,
+ * DB -> DTO mapper functions, non-invented commercial facts (price, stock),
+ * error states, empty catalog handling, and companion product resolution.
  */
 
 import { mapDbProductToDTO, mapCatalogDTOToStorefrontProduct, buildCatalogMediaUrl } from '../services/catalog-mapper.ts';
-import { getPublishedProducts, getPublishedProductBySlug } from '../services/catalog.ts';
+import {
+  getStorefrontProductsResult,
+  getStorefrontProductBySlugResult,
+  getPublishedProducts,
+  getPublishedProductBySlug,
+  getDataMode,
+} from '../services/catalog.ts';
 
 interface TestResult {
   name: string;
@@ -30,7 +37,7 @@ const completeDbRow = {
   id: 'prod-001-uuid',
   slug: 'vela-ambar-madera',
   name: 'Vela Ámbar & Madera',
-  description: 'Aroma cállido de sotobosque y madera noble.',
+  description: 'Aroma cálido de sotobosque y madera noble.',
   status: 'published',
   metadata: {
     aromaticFamily: 'Amaderado',
@@ -84,118 +91,173 @@ const completeDbRow = {
   ],
 };
 
-const minimalDbRow = {
+const minimalDbRowNoPrice = {
   id: 'prod-002-uuid',
   slug: 'difusor-bosque-niebla',
   name: 'Difusor Bosque de Niebla',
   status: 'published',
-  product_variants: [],
+  product_variants: [
+    {
+      id: 'var-002-uuid',
+      sku: 'DIF-BOS-200',
+      name: '200ml',
+      is_active: true,
+      prices: [], // No active price!
+    },
+  ],
   product_category_mappings: [],
   olfactory_pyramids: null,
   catalog_media: [],
 };
 
-// === 1. MAPPER TEST: Complete DB Row to DTO ===
-const dto = mapDbProductToDTO(completeDbRow, 'https://supabase.mejunje.com');
-assert(
-  'DB row maps to CatalogProductDetailDTO with correct fields',
-  dto.id === 'prod-001-uuid' && dto.slug === 'vela-ambar-madera' && dto.isPublished === true,
-  'id=prod-001-uuid, isPublished=true',
-  `id=${dto.id}, isPublished=${dto.isPublished}`
-);
-
-// === 2. MAPPER TEST: Media Ordering (Primary & Display Order) ===
-assert(
-  'Media items are sorted with primary image first',
-  dto.media.length === 2 && dto.media[0].isPrimary === true && dto.media[0].id === 'med-001-uuid',
-  'first media isPrimary = true (med-001-uuid)',
-  `first media id = ${dto.media[0]?.id}`
-);
-
-// === 3. MAPPER TEST: Media URL Construction ===
-const mediaUrl = buildCatalogMediaUrl('products/test/image.jpg', 'https://example.supabase.co');
-assert(
-  'Public storage media URL built correctly',
-  mediaUrl === 'https://example.supabase.co/storage/v1/object/public/catalog-media/products/test/image.jpg',
-  'https://example.supabase.co/storage/v1/object/public/catalog-media/products/test/image.jpg',
-  mediaUrl
-);
-
-// === 4. MAPPER TEST: Product without media & pyramid ===
-const minimalDto = mapDbProductToDTO(minimalDbRow);
-assert(
-  'Product without media & pyramid maps to null/empty without throwing',
-  minimalDto.media.length === 0 && minimalDto.olfactoryPyramid === null && minimalDto.variants.length === 0,
-  'media=[], pyramid=null, variants=[]',
-  `media=${minimalDto.media.length}, pyramid=${minimalDto.olfactoryPyramid}, variants=${minimalDto.variants.length}`
-);
-
-// === 5. MAPPER TEST: DTO to Storefront Product UI Object ===
-const uiProduct = mapCatalogDTOToStorefrontProduct(dto);
-assert(
-  'Catalog DTO converts to Storefront Product UI object',
-  uiProduct.id === dto.id && uiProduct.price === 18500 && uiProduct.pyramid.topNotes.length === 2,
-  'price = 18500, topNotes = 2',
-  `price = ${uiProduct.price}, topNotes = ${uiProduct.pyramid.topNotes.length}`
-);
-
-// === 6. DATA ACCESS SERVICE: Handles DB Error or Missing Client Gracefully ===
-const mockErrorClient = {
+// === MOCK CLIENTS ===
+const mockEmptyClient = {
   from: () => ({
     select: () => ({
       eq: () => ({
-        order: () => Promise.resolve({ data: null, error: { message: 'DB Connection Error' } }),
+        order: () => Promise.resolve({ data: [], error: null }),
         eq: () => ({
-          single: () => Promise.resolve({ data: null, error: { message: 'Not found' } }),
+          single: () => Promise.resolve({ data: null, error: { code: 'PGRST116', message: 'No rows returned' } }),
         }),
       }),
     }),
   }),
 };
 
-async function testServiceFallbacks() {
-  const products = await getPublishedProducts(mockErrorClient);
+const mockErrorClient = {
+  from: () => ({
+    select: () => ({
+      eq: () => ({
+        order: () => Promise.resolve({ data: null, error: { message: 'DB Connection Error' } }),
+        eq: () => ({
+          single: () => Promise.resolve({ data: null, error: { message: 'Fatal DB failure' } }),
+        }),
+      }),
+    }),
+  }),
+};
+
+const mockSuccessClient = {
+  from: () => ({
+    select: () => ({
+      eq: () => ({
+        order: () => Promise.resolve({ data: [completeDbRow, minimalDbRowNoPrice], error: null }),
+        eq: () => ({
+          single: () => Promise.resolve({ data: completeDbRow, error: null }),
+        }),
+      }),
+    }),
+  }),
+};
+
+async function runAllTests() {
+  // 1. MAPPER TEST: DB Row to DTO
+  const dto = mapDbProductToDTO(completeDbRow, 'https://supabase.mejunje.com');
   assert(
-    'getPublishedProducts returns empty array on DB error without throwing',
-    Array.isArray(products) && products.length === 0,
-    'returns []',
-    `returns ${JSON.stringify(products)}`
+    '1. DB row maps to CatalogProductDetailDTO with correct fields',
+    dto.id === 'prod-001-uuid' && dto.slug === 'vela-ambar-madera' && dto.isPublished === true,
+    'id=prod-001-uuid, isPublished=true',
+    `id=${dto.id}, isPublished=${dto.isPublished}`
   );
 
-  const productBySlug = await getPublishedProductBySlug('non-existent-slug', mockErrorClient);
+  // 2. MAPPER TEST: Primary Media First Ordering
   assert(
-    'getPublishedProductBySlug returns null for missing slug without throwing',
-    productBySlug === null,
-    'returns null',
-    `returns ${productBySlug}`
+    '2. Media items are sorted with primary image first',
+    dto.media.length === 2 && dto.media[0].isPrimary === true && dto.media[0].id === 'med-001-uuid',
+    'first media isPrimary = true (med-001-uuid)',
+    `first media id = ${dto.media[0]?.id}`
   );
 
-  const emptySlugResult = await getPublishedProductBySlug('', mockErrorClient);
+  // 3. MAPPER TEST: Public Storage URL Construction
+  const mediaUrl = buildCatalogMediaUrl('products/test/image.jpg', 'https://example.supabase.co');
   assert(
-    'getPublishedProductBySlug returns null immediately for empty slug string',
-    emptySlugResult === null,
-    'returns null',
-    `returns ${emptySlugResult}`
+    '3. Public storage media URL built correctly',
+    mediaUrl === 'https://example.supabase.co/storage/v1/object/public/catalog-media/products/test/image.jpg',
+    'https://example.supabase.co/storage/v1/object/public/catalog-media/products/test/image.jpg',
+    mediaUrl
+  );
+
+  // 4. LIVE MODE + EMPTY CAT -> Returns [], NOT synthetic fixtures
+  const liveEmptyResult = await getStorefrontProductsResult({ mode: 'live', customClient: mockEmptyClient });
+  assert(
+    '4. LIVE mode + empty CAT returns empty array [] (NO silent fallback to DEMO fixtures)',
+    liveEmptyResult.products.length === 0 && liveEmptyResult.isError === false && liveEmptyResult.mode === 'live',
+    'products=[], isError=false, mode=live',
+    `products=${liveEmptyResult.products.length}, isError=${liveEmptyResult.isError}, mode=${liveEmptyResult.mode}`
+  );
+
+  // 5. LIVE MODE + DB ERROR -> Returns isError: true, NOT synthetic fixtures
+  const liveErrorResult = await getStorefrontProductsResult({ mode: 'live', customClient: mockErrorClient });
+  assert(
+    '5. LIVE mode + DB error returns isError=true and [] (NO silent fallback to DEMO fixtures)',
+    liveErrorResult.products.length === 0 && liveErrorResult.isError === true && liveErrorResult.mode === 'live',
+    'products=[], isError=true, mode=live',
+    `products=${liveErrorResult.products.length}, isError=${liveErrorResult.isError}, mode=${liveErrorResult.mode}`
+  );
+
+  // 6. LIVE MODE + MISSING SLUG -> Returns isNotFound: true, product: null
+  const liveMissingSlug = await getStorefrontProductBySlugResult('non-existent-slug', { mode: 'live', customClient: mockEmptyClient });
+  assert(
+    '6. LIVE mode + non-existent slug returns product=null and isNotFound=true',
+    liveMissingSlug.product === null && liveMissingSlug.isNotFound === true && liveMissingSlug.isError === false,
+    'product=null, isNotFound=true, isError=false',
+    `product=${liveMissingSlug.product}, isNotFound=${liveMissingSlug.isNotFound}, isError=${liveMissingSlug.isError}`
+  );
+
+  // 7. DEMO MODE -> Returns synthetic PRODUCTS fixtures
+  const demoResult = await getStorefrontProductsResult({ mode: 'demo' });
+  assert(
+    '7. DEMO mode returns synthetic demonstration fixtures',
+    demoResult.products.length > 0 && demoResult.mode === 'demo' && demoResult.isError === false,
+    'products > 0, mode=demo',
+    `products=${demoResult.products.length}, mode=${demoResult.mode}`
+  );
+
+  // 8. LIVE PRODUCT WITHOUT PRICE -> hasPrice: false, price: undefined (NO fake $0)
+  const minimalDtoNoPrice = mapDbProductToDTO(minimalDbRowNoPrice);
+  const liveProductNoPrice = mapCatalogDTOToStorefrontProduct(minimalDtoNoPrice, { mode: 'live' });
+  assert(
+    '8. LIVE product without price returns price=undefined and hasPrice=false (does NOT invent $0 price)',
+    liveProductNoPrice.price === undefined && liveProductNoPrice.hasPrice === false,
+    'price=undefined, hasPrice=false',
+    `price=${liveProductNoPrice.price}, hasPrice=${liveProductNoPrice.hasPrice}`
+  );
+
+  // 9. LIVE PRODUCT DOES NOT INVENT STOCK -> stock: undefined (08-INV authority)
+  const liveProductWithData = mapCatalogDTOToStorefrontProduct(dto, { mode: 'live' });
+  assert(
+    '9. LIVE product stock is undefined (does NOT invent stock: 10)',
+    liveProductWithData.stock === undefined,
+    'stock=undefined',
+    `stock=${liveProductWithData.stock}`
+  );
+
+  // 10. DEMO PRODUCT PROVIDES SAMPLE STOCK -> stock: 10
+  const demoProductWithData = mapCatalogDTOToStorefrontProduct(dto, { mode: 'demo' });
+  assert(
+    '10. DEMO product provides sample stock fixture (stock: 10)',
+    demoProductWithData.stock === 10,
+    'stock=10',
+    `stock=${demoProductWithData.stock}`
   );
 }
 
-await testServiceFallbacks();
+runAllTests().then(() => {
+  console.log('\n======================================================');
+  console.log('  @mejunje/storefront CATALOG INTEGRATION UNIT TESTS');
+  console.log('======================================================');
+  let allPassed = true;
+  results.forEach((r, idx) => {
+    const status = r.passed ? 'PASS' : 'FAIL';
+    if (!r.passed) allPassed = false;
+    console.log(`[${status}] #${idx + 1}: ${r.name}`);
+    console.log(`       Expected: ${r.expected}`);
+    console.log(`       Actual:   ${r.actual}\n`);
+  });
 
-// Print Results
-console.log('\n======================================================');
-console.log('  @mejunje/storefront CATALOG INTEGRATION UNIT TESTS');
-console.log('======================================================');
-let allPassed = true;
-results.forEach((r, idx) => {
-  const status = r.passed ? 'PASS' : 'FAIL';
-  if (!r.passed) allPassed = false;
-  console.log(`[${status}] #${idx + 1}: ${r.name}`);
-  console.log(`       Expected: ${r.expected}`);
-  console.log(`       Actual:   ${r.actual}\n`);
+  console.log(`TOTAL: ${results.length} | PASSED: ${results.filter((r) => r.passed).length} | FAILED: ${results.filter((r) => !r.passed).length}`);
+
+  if (!allPassed) {
+    process.exit(1);
+  }
 });
-
-console.log(`TOTAL: ${results.length} | PASSED: ${results.filter((r) => r.passed).length} | FAILED: ${results.filter((r) => !r.passed).length}`);
-
-if (!allPassed) {
-  process.exit(1);
-}

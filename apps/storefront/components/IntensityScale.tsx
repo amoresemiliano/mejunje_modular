@@ -1,7 +1,7 @@
 import React from "react";
 
 interface IntensityScaleProps {
-  intensity: number; // 1 to 5
+  intensity?: number; // 1 to 5
   showLabel?: boolean;
   className?: string;
 }
@@ -11,18 +11,22 @@ export const IntensityScale: React.FC<IntensityScaleProps> = ({
   showLabel = true,
   className = "",
 }) => {
+  const safeIntensity = typeof intensity === 'number' ? intensity : 0;
+
   return (
     <div className={`flex flex-col gap-1 ${className}`}>
       {showLabel && (
         <div className="flex justify-between items-center text-[10px] font-typewriter tracking-widest text-mejunje-muted uppercase">
           <span>SUTIL</span>
-          <span className="text-mejunje-charcoal font-bold">NIVEL {intensity}/5</span>
+          <span className="text-mejunje-charcoal font-bold">
+            {safeIntensity > 0 ? `NIVEL ${safeIntensity}/5` : 'INTENSIDAD NO ESPECIFICADA'}
+          </span>
           <span>INTENSO</span>
         </div>
       )}
       <div className="flex items-center gap-1.5 py-0.5">
         {[1, 2, 3, 4, 5].map((dot) => {
-          const isActive = dot <= intensity;
+          const isActive = safeIntensity > 0 && dot <= safeIntensity;
           return (
             <div
               key={dot}

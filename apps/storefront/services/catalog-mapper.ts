@@ -142,10 +142,16 @@ export function mapDbProductToDTO(
 
 /**
  * Maps a public CatalogProductDTO to the UI-presentation Product interface expected by Storefront components.
+ * Security Invariant: LIVE mode never invents commercial facts ($0 price, stock: 10, fake aromatic notes).
  */
-export function mapCatalogDTOToStorefrontProduct(dto: CatalogProductDTO | CatalogProductDetailDTO): Product {
+export function mapCatalogDTOToStorefrontProduct(
+  dto: CatalogProductDTO | CatalogProductDetailDTO,
+  options?: { mode?: 'live' | 'demo' }
+): Product {
+  const isDemo = options?.mode === 'demo';
+
   const primaryCategory = dto.categories[0];
-  const categoryLabel = primaryCategory ? primaryCategory.name : 'Botica & Atelier';
+  const categoryLabel = primaryCategory ? primaryCategory.name : (isDemo ? 'Botica & Atelier' : 'Catálogo');
   const rawCatSlug = primaryCategory ? primaryCategory.slug.toUpperCase() : 'VELAS';
   
   let category: 'VELAS' | 'DIFUSORES' | 'HOME_SPRAYS' | 'TEXTILES' | 'SETS' = 'VELAS';
@@ -154,8 +160,10 @@ export function mapCatalogDTOToStorefrontProduct(dto: CatalogProductDTO | Catalo
   else if (rawCatSlug.includes('TEXTIL')) category = 'TEXTILES';
   else if (rawCatSlug.includes('SET') || rawCatSlug.includes('BLEND')) category = 'SETS';
 
-  const firstVariantWithPrice = dto.variants.find((v) => v.price && v.price.amount > 0);
-  const price = firstVariantWithPrice && firstVariantWithPrice.price ? firstVariantWithPrice.price.amount : 0;
+  // Active price evaluation: DO NOT default to fake $0 in LIVE mode
+  const firstVariantWithPrice = dto.variants.find((v) => v.price && typeof v.price.amount === 'number' && v.price.amount > 0);
+  const price = firstVariantWithPrice && firstVariantWithPrice.price ? firstVariantWithPrice.price.amount : (isDemo ? 18500 : undefined);
+  const hasPrice = price !== undefined;
 
   const topNotes = dto.olfactoryPyramid?.topNotes || [];
   const heartNotes = dto.olfactoryPyramid?.heartNotes || [];
@@ -163,7 +171,7 @@ export function mapCatalogDTOToStorefrontProduct(dto: CatalogProductDTO | Catalo
   const mainNotes = [...topNotes, ...heartNotes].slice(0, 3);
 
   const images = dto.media.map((m) => m.filePath);
-  const sizeVolume = dto.variants[0]?.name || 'Formato Atelier';
+  const sizeVolume = dto.variants[0]?.name || (isDemo ? 'Formato Atelier' : undefined);
 
   const metadata = (dto as CatalogProductDetailDTO).metadata || {};
 
@@ -173,25 +181,28 @@ export function mapCatalogDTOToStorefrontProduct(dto: CatalogProductDTO | Catalo
     name: dto.name,
     category,
     categoryLabel,
-    aromaticFamily: (metadata.aromaticFamily as OlfactoryFamily) || 'Amaderado',
-    mainNotes: mainNotes.length > 0 ? mainNotes : ['Notas Botánicas'],
+    aromaticFamily: (metadata.aromaticFamily as OlfactoryFamily) || (isDemo ? 'Amaderado' : undefined),
+    mainNotes: mainNotes.length > 0 ? mainNotes : (isDemo ? ['Notas Botánicas'] : []),
     price,
+    hasPrice,
     sizeVolume,
-    shortStory: (metadata.shortStory as string) || dto.description || 'Mejunje botánico formulado en lotes pequeños.',
+    shortStory: (metadata.shortStory as string) || dto.description || (isDemo ? 'Mejunje botánico formulado en lotes pequeños.' : ''),
     poeticDescription: (metadata.poeticDescription as string) || dto.description || '',
-    feelsLike: (metadata.feelsLike as string) || (topNotes.length > 0 ? topNotes.join(', ') : 'Aromas naturales'),
-    intensity: typeof metadata.intensity === 'number' ? metadata.intensity : 3,
-    idealForRooms: Array.isArray(metadata.idealForRooms) ? metadata.idealForRooms : ['Living', 'Habitación'],
-    pyramid: {
-      topNotes,
-      heartNotes,
-      baseNotes,
-    },
-    moodTags: Array.isArray(metadata.moodTags) ? metadata.moodTags : ['mood_calma'],
+    feelsLike: (metadata.feelsLike as string) || (topNotes.length > 0 ? topNotes.join(', ') : (isDemo ? 'Aromas naturales' : '')),
+    intensity: typeof metadata.intensity === 'number' ? metadata.intensity : (isDemo ? 3 : undefined),
+    idealForRooms: Array.isArray(metadata.idealForRooms) ? metadata.idealForRooms : (isDemo ? ['Living', 'Habitación'] : []),
+    pyramid: dto.olfactoryPyramid
+      ? {
+          topNotes,
+          heartNotes,
+          baseNotes,
+        }
+      : null,
+    moodTags: Array.isArray(metadata.moodTags) ? metadata.moodTags : (isDemo ? ['mood_calma'] : []),
     companionProductSlugs: Array.isArray(metadata.companionProductSlugs) ? metadata.companionProductSlugs : [],
     isFeatured: Boolean(metadata.isFeatured),
     isBestseller: Boolean(metadata.isBestseller),
-    stock: 10,
+    stock: isDemo ? 10 : undefined, // LIVE mode stock is undefined (08-INV authority)
     badge: (metadata.badge as string) || undefined,
     accentColor: (metadata.accentColor as string) || '#C87D38',
     imageBg: (metadata.imageBg as string) || '#F7F4EF',
