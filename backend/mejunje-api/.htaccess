@@ -1,0 +1,29 @@
+# MEJUNJE Backoffice API - Apache Rewrite Configuration
+# Target directory: /home3/athcomar/public_html/vegendigital/sistemas/mejunje/dev/api/
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /sistemas/mejunje/dev/api/
+
+    # Allow direct access to physical files or directories
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+
+    # Health check route
+    RewriteRule ^health/?$ health.php [L,QSA]
+
+    # Suppliers routes
+    RewriteRule ^suppliers/?$ suppliers.php [L,QSA]
+    RewriteRule ^suppliers/([^/]+)/?$ suppliers.php?id=$1 [L,QSA]
+
+    # Ingredients routes
+    RewriteRule ^ingredients/?$ ingredients.php [L,QSA]
+    RewriteRule ^ingredients/([^/]+)/?$ ingredients.php?id=$1 [L,QSA]
+</IfModule>
+
+# Disable directory browsing
+Options -Indexes
+
+# UTF-8 character encoding header
+AddDefaultCharset UTF-8
