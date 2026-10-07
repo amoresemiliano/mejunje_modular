@@ -60,28 +60,46 @@ if (!function_exists('getDbConnection')) {
         }
 
         $configPath = '/home3/athcomar/mejunje_api_config/dev.php';
-        $dbConfig = null;
+        $config = null;
 
         if (file_exists($configPath)) {
             $loaded = require $configPath;
             if (is_array($loaded)) {
-                $dbConfig = $loaded;
+                $config = $loaded;
             }
         } elseif (file_exists(__DIR__ . '/config.local.php')) {
             $loaded = require __DIR__ . '/config.local.php';
             if (is_array($loaded)) {
-                $dbConfig = $loaded;
+                $config = $loaded;
             }
         }
 
-        // Environment variable fallback if array config was not loaded from file
-        $host    = $dbConfig['db_host']    ?? getenv('DB_HOST')    ?: 'localhost';
-        $db      = $dbConfig['db_name']    ?? getenv('DB_NAME')    ?: 'athcomar_mejunje_dev';
-        $user    = $dbConfig['db_user']    ?? getenv('DB_USER')    ?: 'root';
-        $pass    = $dbConfig['db_pass']    ?? getenv('DB_PASS')    ?: '';
-        $charset = $dbConfig['db_charset'] ?? getenv('DB_CHARSET') ?: 'utf8mb4';
+        $dbConfig = is_array($config) && isset($config['db']) && is_array($config['db']) ? $config['db'] : null;
 
-        $dsn = "mysql:host={$host};dbname={$db};charset={$charset}";
+        if ($dbConfig !== null) {
+            $host    = $dbConfig['host']     ?? 'localhost';
+            $port    = $dbConfig['port']     ?? 3306;
+            $db      = $dbConfig['name']     ?? '';
+            $user    = $dbConfig['user']     ?? '';
+            $pass    = $dbConfig['password'] ?? '';
+            $charset = $dbConfig['charset']  ?? 'utf8mb4';
+        } else {
+            // Environment variable fallback
+            $host    = getenv('DB_HOST')    ?: '';
+            $port    = (int)(getenv('DB_PORT') ?: 3306);
+            $db      = getenv('DB_NAME')    ?: '';
+            $user    = getenv('DB_USER')    ?: '';
+            $pass    = getenv('DB_PASS')    ?: '';
+            $charset = getenv('DB_CHARSET') ?: 'utf8mb4';
+        }
+
+        // Validate required credentials before attempting PDO connection
+        if (empty($host) || empty($db) || empty($user)) {
+            error_log("Database configuration error: Missing host, database name, or user.");
+            sendError('DB_ERROR', 'Database connection error.', 500);
+        }
+
+        $dsn = "mysql:host={$host};port={$port};dbname={$db};charset={$charset}";
 
         try {
             $pdo = new PDO($dsn, $user, $pass, [

@@ -73,6 +73,17 @@ foreach ($phpFiles as $file) {
 }
 
 // -----------------------------------------------------------------------------
+// 1b. Database Configuration Contract Tests
+// -----------------------------------------------------------------------------
+echo "\n--- 1b. Database Configuration Contract Tests ---\n";
+$exampleConfig = require __DIR__ . '/../config.example.php';
+assertTest(is_array($exampleConfig) && isset($exampleConfig['db']) && is_array($exampleConfig['db']), "config.example.php returns array with nested 'db' key");
+assertTest(isset($exampleConfig['db']['host']) && $exampleConfig['db']['host'] === 'localhost', "Config db.host is defined ('localhost')");
+assertTest(isset($exampleConfig['db']['port']) && $exampleConfig['db']['port'] === 3306, "Config db.port is defined (3306)");
+assertTest(isset($exampleConfig['db']['name']) && $exampleConfig['db']['name'] === 'athcomar_mejunje_dev', "Config db.name is defined ('athcomar_mejunje_dev')");
+assertTest(isset($exampleConfig['db']['user']) && isset($exampleConfig['db']['password']) && isset($exampleConfig['db']['charset']), "Config db.user, db.password, and db.charset are defined");
+
+// -----------------------------------------------------------------------------
 // 2. ID Generation Tests
 // -----------------------------------------------------------------------------
 echo "\n--- 2. ID Generation Tests ---\n";

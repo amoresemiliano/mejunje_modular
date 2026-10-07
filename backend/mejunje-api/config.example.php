@@ -9,9 +9,12 @@
  */
 
 return [
-    'db_host'    => 'localhost',
-    'db_name'    => 'athcomar_mejunje_dev',
-    'db_user'    => 'athcomar_dev_user',
-    'db_pass'    => 'YOUR_SECRET_PASSWORD_HERE',
-    'db_charset' => 'utf8mb4'
+    'db' => [
+        'host' => 'localhost',
+        'port' => 3306,
+        'name' => 'athcomar_mejunje_dev',
+        'user' => 'YOUR_DB_USER',
+        'password' => 'YOUR_DB_PASSWORD',
+        'charset' => 'utf8mb4',
+    ],
 ];
