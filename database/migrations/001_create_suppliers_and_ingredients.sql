@@ -1,10 +1,8 @@
 -- MEJUNJE Backoffice MySQL Database Migration
 -- Migration: 001_create_suppliers_and_ingredients.sql
 -- Target: BlueHost MySQL / Percona Server 5.7.44-48
--- Target Database: DEV (athcomar_mejunje_dev) / PROD (athcomar_mejunje)
+-- Target Database: DEV (athcomar_mejunje_dev) / PROD (athcomar_mejunje_prod)
 -- Domain Vertical: Suppliers + Ingredients (1:N Relationship)
-
-SET FOREIGN_KEY_CHECKS = 0;
 
 -- -----------------------------------------------------------------------------
 -- 1. TABLE: suppliers
@@ -59,5 +57,3 @@ CREATE TABLE IF NOT EXISTS ingredients (
     ON DELETE SET NULL 
     ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-SET FOREIGN_KEY_CHECKS = 1;

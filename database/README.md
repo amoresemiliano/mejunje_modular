@@ -9,7 +9,7 @@ This directory contains canonical database schema migrations for the **MEJUNJE B
 * **Database Engine**: BlueHost MySQL / Percona Server `5.7.44-48`
 * **Collation & Character Set**: `utf8mb4_unicode_ci` / `utf8mb4`
 * **Development Database (DEV)**: `athcomar_mejunje_dev`
-* **Production Database (PROD)**: `athcomar_mejunje`
+* **Production Database (PROD)**: `athcomar_mejunje_prod`
 
 > ⚠️ **IMPORTANT**: Supabase (`/supabase`) migrations and configuration files in this repository are **historical artifacts** from an earlier development thread and **MUST NOT** be used for MEJUNJE backoffice persistence.
 
@@ -18,8 +18,8 @@ This directory contains canonical database schema migrations for the **MEJUNJE B
 ## Migration Governance & Rules
 
 1. **Versioned & Paired**: Every schema change must be a numbered `.sql` file in `database/migrations/` and MUST be paired with a matching `.rollback.sql` file.
-2. **Execution Order**: Migrations are executed on **DEV first** (`athcomar_mejunje_dev`), verified against health/API endpoints, and then promoted to **PROD**.
-3. **Idempotency**: Use `CREATE TABLE IF NOT EXISTS` and explicit `SET FOREIGN_KEY_CHECKS` guards.
+2. **Execution Order**: Migrations are executed on **DEV first** (`athcomar_mejunje_dev`), verified against health/API endpoints, and then promoted to **PROD** (`athcomar_mejunje_prod`).
+3. **Idempotency**: Use `CREATE TABLE IF NOT EXISTS` for creation scripts. Rollback scripts must drop tables in dependency-safe order (child tables before parent tables).
 4. **No Direct Production Edits**: DDL statements must never be executed manually in production without a versioned script committed to the repository.
 
 ---
