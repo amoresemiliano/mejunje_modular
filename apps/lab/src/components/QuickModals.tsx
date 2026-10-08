@@ -25,6 +25,8 @@ export default function QuickModals() {
     addMarketQuery,
     ingredients,
     suppliers,
+    realSuppliers,
+    realIngredients,
     catalogProducts,
     showToast,
   } = useKamelo();
@@ -71,12 +73,19 @@ export default function QuickModals() {
   // ---------------------------------------------------------------------------
   // 3. CREAR ORDEN DE COMPRA STATE
   // ---------------------------------------------------------------------------
-  const [poForm, setPoForm] = useState({
-    supplierId: suppliers[0]?.id || '',
-    date: new Date().toLocaleDateString('es-AR'),
-    items: [{ ingredientName: '', requiredQty: 1, unit: 'kg', unitPriceARS: 10000, subtotalARS: 10000 }],
+  const [poForm, setPoForm] = useState<{
+    supplierId: string;
+    date: string;
+    items: { ingredientId: string; requiredQty: number; unitPriceARS: number }[];
+    observations: string;
+  }>({
+    supplierId: '',
+    date: new Date().toISOString().split('T')[0],
+    items: [],
     observations: '',
   });
+
+  const [isSubmittingPO, setIsSubmittingPO] = useState(false);
 
   // ---------------------------------------------------------------------------
   // 4. CREAR PROVEEDOR STATE
@@ -204,37 +213,63 @@ export default function QuickModals() {
   };
 
   // Handlers for PO
-  const handleSavePO = (e: React.FormEvent) => {
+  const activeSuppliersForPO = realSuppliers.length > 0 ? realSuppliers : suppliers;
+  const activeIngredientsForPO = realIngredients.length > 0 ? realIngredients : ingredients;
+
+  const handleSavePO = async (e: React.FormEvent) => {
     e.preventDefault();
-    const sup = suppliers.find((s) => s.id === poForm.supplierId) || suppliers[0];
+    const supId = poForm.supplierId || activeSuppliersForPO[0]?.id;
+    const sup = activeSuppliersForPO.find((s) => s.id === supId);
     if (!sup) {
       showToast('Seleccione un proveedor válido.', 'warning');
       return;
     }
 
-    const itemsCalculated = poForm.items.map((item, idx) => ({
-      id: `poi-${idx}-${Date.now()}`,
-      ingredientName: item.ingredientName || 'Insumo Variado',
-      requiredQty: Number(item.requiredQty),
-      unit: item.unit,
-      unitPriceARS: Number(item.unitPriceARS),
-      subtotalARS: Number(item.requiredQty) * Number(item.unitPriceARS),
-    }));
+    if (poForm.items.length === 0) {
+      showToast('Agregue al menos una materia prima a la orden.', 'warning');
+      return;
+    }
 
-    const subtotal = itemsCalculated.reduce((acc, i) => acc + i.subtotalARS, 0);
+    for (const item of poForm.items) {
+      if (!item.ingredientId) {
+        showToast('Seleccione la materia prima para todos los ítems.', 'warning');
+        return;
+      }
+      if (Number(item.requiredQty) <= 0) {
+        showToast('La cantidad requerida debe ser mayor a 0.', 'warning');
+        return;
+      }
+      if (Number(item.unitPriceARS) < 0) {
+        showToast('El precio unitario no puede ser negativo.', 'warning');
+        return;
+      }
+    }
 
-    addPurchaseOrder({
-      supplierId: sup.id,
-      supplierName: sup.name,
-      date: poForm.date,
-      items: itemsCalculated,
-      subtotalARS: subtotal,
-      totalARS: subtotal,
-      status: 'Solicitada',
-      observations: poForm.observations,
-    });
-
-    setActiveModal(null);
+    setIsSubmittingPO(true);
+    try {
+      await addPurchaseOrder({
+        supplierId: sup.id,
+        date: poForm.date,
+        items: poForm.items.map((i) => ({
+          ingredientId: i.ingredientId,
+          requiredQty: Number(i.requiredQty),
+          unitPriceARS: Number(i.unitPriceARS),
+        })),
+        status: 'Solicitada',
+        observations: poForm.observations || undefined,
+      });
+      setPoForm({
+        supplierId: '',
+        date: new Date().toISOString().split('T')[0],
+        items: [],
+        observations: '',
+      });
+      setActiveModal(null);
+    } catch (err) {
+      // toast error handled in context
+    } finally {
+      setIsSubmittingPO(false);
+    }
   };
 
   const [isSubmittingSupplier, setIsSubmittingSupplier] = useState(false);
@@ -640,145 +675,228 @@ export default function QuickModals() {
         {/* ------------------------------------------------------------------- */}
         {/* MODAL 3: CREAR ORDEN DE COMPRA */}
         {/* ------------------------------------------------------------------- */}
-        {activeModal === 'purchaseOrder' && (
-          <div>
-            <div className="flex items-center gap-3 mb-6 pb-4 border-b border-mejunje-border">
-              <div className="w-10 h-10 rounded-2xl bg-emerald-100 border border-emerald-300 flex items-center justify-center text-emerald-800">
-                <ShoppingBag className="w-5 h-5" />
-              </div>
-              <div>
-                <h2 className="font-bold text-xl sm:text-2xl text-mejunje-carbon">Nueva Orden de Aprovisionamiento</h2>
-                <p className="text-xs text-mejunje-secundario">Emisión de Pedido a Proveedor Registrado</p>
-              </div>
-            </div>
+        {activeModal === 'purchaseOrder' && (() => {
+          const selectedSupplierId = poForm.supplierId || activeSuppliersForPO[0]?.id || '';
+          const filteredIngredients = activeIngredientsForPO.filter(
+            (ing) => ing.supplierId === selectedSupplierId
+          );
+          const orderTotalPreview = poForm.items.reduce(
+            (acc, item) => acc + Number(item.requiredQty || 0) * Number(item.unitPriceARS || 0),
+            0
+          );
 
-            <form onSubmit={handleSavePO} className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          return (
+            <div>
+              <div className="flex items-center gap-3 mb-6 pb-4 border-b border-mejunje-border">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-100 border border-emerald-300 flex items-center justify-center text-emerald-800">
+                  <ShoppingBag className="w-5 h-5" />
+                </div>
                 <div>
-                  <label className="block text-xs uppercase text-mejunje-carbon font-bold mb-1">Proveedor *</label>
-                  <select
-                    value={poForm.supplierId}
-                    onChange={(e) => setPoForm({ ...poForm, supplierId: e.target.value })}
-                    className="w-full bg-white border border-mejunje-border rounded-xl px-3.5 py-2 text-xs text-mejunje-carbon focus:outline-none focus:border-mejunje-verdeseco"
-                  >
-                    {suppliers.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name} (Mínimo: ${s.minPurchaseARS.toLocaleString('es-AR')})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs uppercase text-mejunje-carbon font-bold mb-1">Fecha Emisión</label>
-                  <input
-                    type="text"
-                    value={poForm.date}
-                    onChange={(e) => setPoForm({ ...poForm, date: e.target.value })}
-                    className="w-full bg-white border border-mejunje-border rounded-xl px-3.5 py-2 text-xs text-mejunje-carbon focus:outline-none"
-                  />
+                  <h2 className="font-bold text-xl sm:text-2xl text-mejunje-carbon">Nueva Orden de Aprovisionamiento</h2>
+                  <p className="text-xs text-mejunje-secundario">Emisión de Pedido a Proveedor Registrado (MySQL)</p>
                 </div>
               </div>
 
-              {/* Items List */}
-              <div className="bg-mejunje-papel p-4 rounded-2xl border border-mejunje-border space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold uppercase text-mejunje-carbon">Items de la Orden</span>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setPoForm({
-                        ...poForm,
-                        items: [...poForm.items, { ingredientName: '', requiredQty: 1, unit: 'kg', unitPriceARS: 5000, subtotalARS: 5000 }],
-                      })
-                    }
-                    className="text-[11px] text-emerald-800 hover:underline flex items-center gap-1 font-bold"
-                  >
-                    <Plus className="w-3.5 h-3.5" /> Agregar Item
-                  </button>
+              <form onSubmit={handleSavePO} className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs uppercase text-mejunje-carbon font-bold mb-1">Proveedor *</label>
+                    <select
+                      value={selectedSupplierId}
+                      onChange={(e) => {
+                        const newSupId = e.target.value;
+                        const nextFiltered = activeIngredientsForPO.filter((i) => i.supplierId === newSupId);
+                        const initialIng = nextFiltered[0];
+                        setPoForm({
+                          ...poForm,
+                          supplierId: newSupId,
+                          items: initialIng
+                            ? [{ ingredientId: initialIng.id, requiredQty: 1, unitPriceARS: initialIng.unitCostARS || 0 }]
+                            : [],
+                        });
+                      }}
+                      className="w-full bg-white border border-mejunje-border rounded-xl px-3.5 py-2 text-xs text-mejunje-carbon focus:outline-none focus:border-mejunje-verdeseco"
+                    >
+                      {activeSuppliersForPO.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name} (Mínimo: ${s.minPurchaseARS.toLocaleString('es-AR')})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs uppercase text-mejunje-carbon font-bold mb-1">Fecha Emisión</label>
+                    <input
+                      type="date"
+                      value={poForm.date}
+                      onChange={(e) => setPoForm({ ...poForm, date: e.target.value })}
+                      className="w-full bg-white border border-mejunje-border rounded-xl px-3.5 py-2 text-xs text-mejunje-carbon focus:outline-none"
+                    />
+                  </div>
                 </div>
 
-                {poForm.items.map((item, idx) => (
-                  <div key={idx} className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      placeholder="Materia Prima o Insumo"
-                      value={item.ingredientName}
-                      onChange={(e) => {
-                        const next = [...poForm.items];
-                        next[idx].ingredientName = e.target.value;
-                        setPoForm({ ...poForm, items: next });
-                      }}
-                      className="flex-1 bg-white border border-mejunje-border rounded-lg px-2.5 py-1.5 text-xs text-mejunje-carbon focus:outline-none focus:border-mejunje-verdeseco"
-                    />
-
-                    <input
-                      type="number"
-                      placeholder="Cant"
-                      value={item.requiredQty}
-                      onChange={(e) => {
-                        const next = [...poForm.items];
-                        next[idx].requiredQty = Number(e.target.value);
-                        setPoForm({ ...poForm, items: next });
-                      }}
-                      className="w-20 bg-white border border-mejunje-border rounded-lg px-2.5 py-1.5 text-xs text-mejunje-carbon focus:outline-none"
-                    />
-
-                    <input
-                      type="number"
-                      placeholder="Precio ($)"
-                      value={item.unitPriceARS}
-                      onChange={(e) => {
-                        const next = [...poForm.items];
-                        next[idx].unitPriceARS = Number(e.target.value);
-                        setPoForm({ ...poForm, items: next });
-                      }}
-                      className="w-28 bg-white border border-mejunje-border rounded-lg px-2.5 py-1.5 text-xs text-mejunje-carbon focus:outline-none"
-                    />
-
+                {/* Items List */}
+                <div className="bg-mejunje-papel p-4 rounded-2xl border border-mejunje-border space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase text-mejunje-carbon">
+                      Materias Primas ({filteredIngredients.length} disponibles)
+                    </span>
                     <button
                       type="button"
+                      disabled={filteredIngredients.length === 0}
                       onClick={() => {
-                        const next = poForm.items.filter((_, i) => i !== idx);
-                        setPoForm({ ...poForm, items: next });
+                        const defaultIng = filteredIngredients[0];
+                        if (defaultIng) {
+                          setPoForm({
+                            ...poForm,
+                            supplierId: selectedSupplierId,
+                            items: [
+                              ...poForm.items,
+                              { ingredientId: defaultIng.id, requiredQty: 1, unitPriceARS: defaultIng.unitCostARS || 0 },
+                            ],
+                          });
+                        }
                       }}
-                      className="text-mejunje-rojo hover:text-rose-900 p-1"
+                      className="text-[11px] text-emerald-800 hover:underline flex items-center gap-1 font-bold disabled:opacity-40"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <Plus className="w-3.5 h-3.5" /> Agregar Materia Prima
                     </button>
                   </div>
-                ))}
-              </div>
 
-              <div>
-                <label className="block text-xs uppercase text-mejunje-carbon font-bold mb-1">Observaciones de Despacho</label>
-                <textarea
-                  rows={2}
-                  value={poForm.observations}
-                  onChange={(e) => setPoForm({ ...poForm, observations: e.target.value })}
-                  placeholder="Ej. Entregar en taller de Buenos Aires. Pago con transferencia."
-                  className="w-full bg-white border border-mejunje-border rounded-xl px-3.5 py-2 text-xs text-mejunje-carbon focus:outline-none focus:border-mejunje-verdeseco"
-                />
-              </div>
+                  {filteredIngredients.length === 0 ? (
+                    <p className="text-xs text-mejunje-secundario italic py-2">
+                      El proveedor seleccionado no tiene materias primas asociadas registradas.
+                    </p>
+                  ) : poForm.items.length === 0 ? (
+                    <p className="text-xs text-mejunje-secundario italic py-2">
+                      Haga clic en &quot;Agregar Materia Prima&quot; para añadir ítems a la orden.
+                    </p>
+                  ) : (
+                    poForm.items.map((item, idx) => {
+                      const selIng = activeIngredientsForPO.find((i) => i.id === item.ingredientId);
+                      const subtotal = Number(item.requiredQty || 0) * Number(item.unitPriceARS || 0);
 
-              <div className="pt-4 flex items-center justify-end gap-3 border-t border-mejunje-border">
-                <button
-                  type="button"
-                  onClick={() => setActiveModal(null)}
-                  className="px-4 py-2 btn-mejunje-secondary text-xs rounded-xl"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-emerald-800 hover:bg-emerald-900 shadow-xs flex items-center gap-1.5"
-                >
-                  <ShoppingBag className="w-4 h-4" /> Emitir Orden
-                </button>
-              </div>
-            </form>
-          </div>
-        )}
+                      return (
+                        <div key={idx} className="flex flex-wrap items-center gap-2 bg-white p-2.5 rounded-xl border border-mejunje-border">
+                          <select
+                            value={item.ingredientId}
+                            onChange={(e) => {
+                              const newIngId = e.target.value;
+                              const ingObj = activeIngredientsForPO.find((i) => i.id === newIngId);
+                              const next = [...poForm.items];
+                              next[idx] = {
+                                ...next[idx],
+                                ingredientId: newIngId,
+                                unitPriceARS: ingObj ? ingObj.unitCostARS : next[idx].unitPriceARS,
+                              };
+                              setPoForm({ ...poForm, supplierId: selectedSupplierId, items: next });
+                            }}
+                            className="flex-1 min-w-[180px] bg-white border border-mejunje-border rounded-lg px-2.5 py-1.5 text-xs text-mejunje-carbon focus:outline-none focus:border-mejunje-verdeseco"
+                          >
+                            {filteredIngredients.map((i) => (
+                              <option key={i.id} value={i.id}>
+                                {i.name} ({i.unit}) - ${i.unitCostARS}/u
+                              </option>
+                            ))}
+                          </select>
+
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="number"
+                              step="0.0001"
+                              min="0.0001"
+                              placeholder="Cant"
+                              value={item.requiredQty}
+                              onChange={(e) => {
+                                const next = [...poForm.items];
+                                next[idx].requiredQty = Number(e.target.value);
+                                setPoForm({ ...poForm, supplierId: selectedSupplierId, items: next });
+                              }}
+                              className="w-20 bg-white border border-mejunje-border rounded-lg px-2.5 py-1.5 text-xs text-mejunje-carbon focus:outline-none"
+                            />
+                            <span className="text-[10px] text-mejunje-secundario">{selIng?.unit || 'u'}</span>
+                          </div>
+
+                          <div className="flex items-center gap-1">
+                            <span className="text-[10px] text-mejunje-secundario">$</span>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              placeholder="Precio ARS"
+                              value={item.unitPriceARS}
+                              onChange={(e) => {
+                                const next = [...poForm.items];
+                                next[idx].unitPriceARS = Number(e.target.value);
+                                setPoForm({ ...poForm, supplierId: selectedSupplierId, items: next });
+                              }}
+                              className="w-24 bg-white border border-mejunje-border rounded-lg px-2.5 py-1.5 text-xs text-mejunje-carbon focus:outline-none"
+                            />
+                          </div>
+
+                          <div className="text-right font-bold text-mejunje-carbon text-xs min-w-[70px]">
+                            ${subtotal.toLocaleString('es-AR')}
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const next = poForm.items.filter((_, i) => i !== idx);
+                              setPoForm({ ...poForm, supplierId: selectedSupplierId, items: next });
+                            }}
+                            className="text-mejunje-rojo hover:text-rose-900 p-1"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      );
+                    })
+                  )}
+
+                  {/* Subtotal & Total Preview */}
+                  {poForm.items.length > 0 && (
+                    <div className="pt-2 border-t border-mejunje-border flex items-center justify-between text-xs font-bold text-mejunje-carbon">
+                      <span>Total Estimado de la Orden:</span>
+                      <span className="text-sm text-mejunje-verdeprofundo font-bold">
+                        ${orderTotalPreview.toLocaleString('es-AR')}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs uppercase text-mejunje-carbon font-bold mb-1">Observaciones de Despacho</label>
+                  <textarea
+                    rows={2}
+                    value={poForm.observations}
+                    onChange={(e) => setPoForm({ ...poForm, supplierId: selectedSupplierId, observations: e.target.value })}
+                    placeholder="Ej. Entregar en taller de Buenos Aires. Pago con transferencia."
+                    className="w-full bg-white border border-mejunje-border rounded-xl px-3.5 py-2 text-xs text-mejunje-carbon focus:outline-none focus:border-mejunje-verdeseco"
+                  />
+                </div>
+
+                <div className="pt-4 flex items-center justify-end gap-3 border-t border-mejunje-border">
+                  <button
+                    type="button"
+                    onClick={() => setActiveModal(null)}
+                    className="px-4 py-2 btn-mejunje-secondary text-xs rounded-xl"
+                    disabled={isSubmittingPO}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmittingPO || filteredIngredients.length === 0 || poForm.items.length === 0}
+                    className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-emerald-800 hover:bg-emerald-900 shadow-xs flex items-center gap-1.5 disabled:opacity-50"
+                  >
+                    <ShoppingBag className="w-4 h-4" /> {isSubmittingPO ? 'Emitiendo...' : 'Emitir Orden Real'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          );
+        })()}
 
         {/* ------------------------------------------------------------------- */}
         {/* MODAL 4: CREAR PROVEEDOR */}

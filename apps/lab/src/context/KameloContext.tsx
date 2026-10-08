@@ -43,6 +43,12 @@ import {
   deleteIngredientApi,
   CreateIngredientInput,
   UpdateIngredientInput,
+  getPurchaseOrdersApi,
+  createPurchaseOrderApi,
+  updatePurchaseOrderApi,
+  deletePurchaseOrderApi,
+  CreatePurchaseOrderInput,
+  UpdatePurchaseOrderInput,
 } from '@/services/api';
 
 interface KameloContextType {
@@ -54,10 +60,14 @@ interface KameloContextType {
   demoIngredients: Ingredient[];
   realSuppliers: Supplier[];
   realIngredients: Ingredient[];
+  realPurchaseOrders: PurchaseOrder[];
+  demoPurchaseOrders: PurchaseOrder[];
   isSuppliersLoading: boolean;
   isIngredientsLoading: boolean;
+  isPurchaseOrdersLoading: boolean;
   suppliersError: string | null;
   ingredientsError: string | null;
+  purchaseOrdersError: string | null;
   requirements: SupplierRequirementGroup[];
   purchaseOrders: PurchaseOrder[];
   batchTests: BatchTest[];
@@ -78,6 +88,7 @@ interface KameloContextType {
   // API Reload Actions
   fetchRealSuppliers: () => Promise<void>;
   fetchRealIngredients: () => Promise<void>;
+  fetchRealPurchaseOrders: () => Promise<void>;
 
   // Formulas CRUD
   addFormula: (formula: Omit<Formula, 'id'>) => Formula;
@@ -107,9 +118,9 @@ interface KameloContextType {
     formulaName: string
   ) => void;
   createPurchaseOrderFromRequirements: (supplierName: string) => void;
-  addPurchaseOrder: (po: Omit<PurchaseOrder, 'id' | 'code'>) => PurchaseOrder;
-  updatePurchaseOrderStatus: (id: string, status: PurchaseOrder['status']) => void;
-  deletePurchaseOrder: (id: string) => void;
+  addPurchaseOrder: (poInput: CreatePurchaseOrderInput) => Promise<PurchaseOrder>;
+  updatePurchaseOrderStatus: (id: string, status: PurchaseOrder['status']) => Promise<void>;
+  deletePurchaseOrder: (id: string) => Promise<void>;
   duplicatePurchaseOrder: (id: string) => void;
 
   // Batches / Lab Tests
@@ -147,16 +158,19 @@ export const KameloProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [demoIngredients] = useState<Ingredient[]>(mockIngredients);
   const [demoSuppliers] = useState<Supplier[]>(mockSuppliers);
 
-  // REAL API State for Suppliers & Ingredients
+  // REAL API State for Suppliers, Ingredients & Purchase Orders
   const [realSuppliers, setRealSuppliers] = useState<Supplier[]>([]);
   const [realIngredients, setRealIngredients] = useState<Ingredient[]>([]);
+  const [demoPurchaseOrders] = useState<PurchaseOrder[]>(mockPurchaseOrders);
+  const [realPurchaseOrders, setRealPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [isSuppliersLoading, setIsSuppliersLoading] = useState<boolean>(true);
   const [isIngredientsLoading, setIsIngredientsLoading] = useState<boolean>(true);
+  const [isPurchaseOrdersLoading, setIsPurchaseOrdersLoading] = useState<boolean>(true);
   const [suppliersError, setSuppliersError] = useState<string | null>(null);
   const [ingredientsError, setIngredientsError] = useState<string | null>(null);
+  const [purchaseOrdersError, setPurchaseOrdersError] = useState<string | null>(null);
 
   const [requirements, setRequirements] = useState<SupplierRequirementGroup[]>(mockSupplierGroups);
-  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>(mockPurchaseOrders);
   const [batchTests, setBatchTests] = useState<BatchTest[]>(mockBatchTests);
   const [catalogProducts, setCatalogProducts] = useState<CatalogProduct[]>(mockCatalogProducts);
   const [marketQueries, setMarketQueries] = useState<MarketQuery[]>(mockMarketQueries);
@@ -196,22 +210,37 @@ export const KameloProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   };
 
+  // Fetch Purchase Orders from PHP REST API
+  const fetchRealPurchaseOrders = async () => {
+    setIsPurchaseOrdersLoading(true);
+    setPurchaseOrdersError(null);
+    try {
+      const data = await getPurchaseOrdersApi();
+      setRealPurchaseOrders(data);
+    } catch (e: any) {
+      console.error('Failed to load real purchase orders from API:', e);
+      setPurchaseOrdersError(e.message || 'Error al cargar órdenes de compra de la API.');
+    } finally {
+      setIsPurchaseOrdersLoading(false);
+    }
+  };
+
   // Initial API Load
   useEffect(() => {
     fetchRealSuppliers();
     fetchRealIngredients();
+    fetchRealPurchaseOrders();
   }, []);
 
-  // Hydrate from localStorage on initial load (EXCLUDES suppliers & ingredients as real source of truth)
+  // Hydrate from localStorage on initial load (EXCLUDES suppliers, ingredients & purchase orders as real source of truth)
   useEffect(() => {
     try {
       const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed.formulas) setFormulas(parsed.formulas);
-        // Note: localStorage suppliers and ingredients are ignored for real operational state
+        // Note: localStorage suppliers, ingredients & purchase orders are ignored for real operational state
         if (parsed.requirements) setRequirements(parsed.requirements);
-        if (parsed.purchaseOrders) setPurchaseOrders(parsed.purchaseOrders);
         if (parsed.batchTests) setBatchTests(parsed.batchTests);
         if (parsed.catalogProducts) setCatalogProducts(parsed.catalogProducts);
         if (parsed.marketQueries) setMarketQueries(parsed.marketQueries);
@@ -224,13 +253,12 @@ export const KameloProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   }, []);
 
-  // Save to localStorage on changes (EXCLUDES suppliers and ingredients)
+  // Save to localStorage on changes (EXCLUDES suppliers, ingredients and purchase orders)
   useEffect(() => {
     try {
       const stateToSave = {
         formulas,
         requirements,
-        purchaseOrders,
         batchTests,
         catalogProducts,
         marketQueries,
@@ -245,7 +273,6 @@ export const KameloProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   }, [
     formulas,
     requirements,
-    purchaseOrders,
     batchTests,
     catalogProducts,
     marketQueries,
@@ -550,85 +577,69 @@ export const KameloProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const createPurchaseOrderFromRequirements = (supplierName: string) => {
-    const group = requirements.find((r) => r.supplierName.toLowerCase() === supplierName.toLowerCase());
-    if (!group || group.requirements.length === 0) {
-      showToast('No hay insumos requeridos para este proveedor.', 'warning');
-      return;
+    showToast(
+      'Las necesidades derivan de fórmulas demo. Para emitir una orden de compra real use la pestaña Órdenes > Nueva Orden de Compra.',
+      'warning'
+    );
+  };
+
+  const addPurchaseOrder = async (poInput: CreatePurchaseOrderInput): Promise<PurchaseOrder> => {
+    try {
+      const created = await createPurchaseOrderApi(poInput);
+      setRealPurchaseOrders((prev) => [created, ...prev.filter((p) => p.id !== created.id)]);
+      addActivityLog(
+        'Orden de Compra Registrada (API)',
+        `OC ${created.code} registrada para ${created.supplierName} en MySQL.`,
+        'purchase'
+      );
+      showToast(`Orden de compra ${created.code} registrada exitosamente.`);
+      return created;
+    } catch (e: any) {
+      console.error('Failed to create PO via API:', e);
+      showToast(e.message || 'Error al registrar orden de compra en la API.', 'error');
+      throw e;
     }
-
-    const poCode = `OC-2026-00${purchaseOrders.length + 1}`;
-    const today = new Date().toLocaleDateString('es-AR');
-
-    const newPO: PurchaseOrder = {
-      id: `po-${Date.now()}`,
-      code: poCode,
-      supplierId: group.supplierId,
-      supplierName: group.supplierName,
-      date: today,
-      items: [...group.requirements],
-      subtotalARS: group.totalARS,
-      totalARS: group.totalARS,
-      status: 'Solicitada',
-      observations: `Orden generada automáticamente desde requerimientos consolidados de laboratorio.`,
-    };
-
-    setPurchaseOrders((prev) => [newPO, ...prev]);
-
-    // Clear group requirements
-    setRequirements((prev) =>
-      prev.map((r) =>
-        r.supplierName.toLowerCase() === supplierName.toLowerCase()
-          ? { ...r, requirements: [], totalARS: 0, meetsMinimum: false }
-          : r
-      )
-    );
-
-    addActivityLog('Orden de Compra Creada', `OC ${poCode} generada para ${supplierName} por ${group.totalARS.toLocaleString('es-AR')}.`, 'purchase');
-    showToast(`Orden ${poCode} generada para ${supplierName}.`);
   };
 
-  const addPurchaseOrder = (poData: Omit<PurchaseOrder, 'id' | 'code'>): PurchaseOrder => {
-    const newId = `po-${Date.now()}`;
-    const code = `OC-2026-00${purchaseOrders.length + 1}`;
-    const newPO: PurchaseOrder = { ...poData, id: newId, code };
-    setPurchaseOrders((prev) => [newPO, ...prev]);
-    addActivityLog('Orden de Compra Manual', `OC ${code} agregada para ${newPO.supplierName}.`, 'purchase');
-    showToast(`Orden de compra ${code} registrada.`);
-    return newPO;
+  const updatePurchaseOrderStatus = async (id: string, status: PurchaseOrder['status']): Promise<void> => {
+    try {
+      const updated = await updatePurchaseOrderApi(id, { status });
+      setRealPurchaseOrders((prev) => prev.map((p) => (p.id === id ? updated : p)));
+
+      if (status === 'Recibida') {
+        await fetchRealIngredients();
+        showToast(`Orden ${updated.code} recibida. ¡Cantidades sumadas al stock real de insumos!`, 'success');
+      } else {
+        showToast(`Estado de la orden ${updated.code} actualizado a ${status}.`);
+      }
+      addActivityLog('Estado OC Cambiado (API)', `Orden ${updated.code} marcada como ${status}.`, 'purchase');
+    } catch (e: any) {
+      console.error('Failed to update PO status via API:', e);
+      showToast(e.message || 'Error al actualizar estado de la orden en la API.', 'error');
+      throw e;
+    }
   };
 
-  const updatePurchaseOrderStatus = (id: string, status: PurchaseOrder['status']) => {
-    setPurchaseOrders((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, status } : p))
-    );
-    addActivityLog('Estado OC Cambiado', `Orden marcada como ${status}.`, 'purchase');
-    showToast(`Estado de la orden actualizado a ${status}.`);
-  };
-
-  const deletePurchaseOrder = (id: string) => {
-    const target = purchaseOrders.find((p) => p.id === id);
-    setPurchaseOrders((prev) => prev.filter((p) => p.id !== id));
-    if (target) {
-      addActivityLog('Orden de Compra Eliminada', `Orden ${target.code} cancelada y eliminada.`, 'purchase');
-      showToast(`Orden ${target.code} eliminada.`, 'info');
+  const deletePurchaseOrder = async (id: string): Promise<void> => {
+    const target = realPurchaseOrders.find((p) => p.id === id);
+    try {
+      await deletePurchaseOrderApi(id);
+      setRealPurchaseOrders((prev) => prev.filter((p) => p.id !== id));
+      if (target) {
+        addActivityLog('Orden de Compra Eliminada (API)', `Orden ${target.code} deshabilitada en MySQL.`, 'purchase');
+        showToast(`Orden ${target.code} eliminada (soft delete).`, 'info');
+      }
+    } catch (e: any) {
+      console.error('Failed to delete PO via API:', e);
+      showToast(e.message || 'Error al eliminar orden de compra en la API.', 'error');
+      throw e;
     }
   };
 
   const duplicatePurchaseOrder = (id: string) => {
-    const target = purchaseOrders.find((p) => p.id === id);
+    const target = realPurchaseOrders.find((p) => p.id === id) || demoPurchaseOrders.find((p) => p.id === id);
     if (!target) return;
-    const poCode = `OC-2026-00${purchaseOrders.length + 1}`;
-    const today = new Date().toLocaleDateString('es-AR');
-    const duplicated: PurchaseOrder = {
-      ...target,
-      id: `po-${Date.now()}`,
-      code: poCode,
-      date: today,
-      status: 'Borrador',
-    };
-    setPurchaseOrders((prev) => [duplicated, ...prev]);
-    addActivityLog('Orden Duplicada', `Copia de OC generada: ${poCode}.`, 'purchase');
-    showToast(`Orden duplicada como ${poCode}.`);
+    showToast('Para emitir una nueva orden de compra, use la opción Nueva Orden Real.', 'info');
   };
 
   // ---------------------------------------------------------------------------
@@ -882,14 +893,19 @@ export const KameloProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         demoIngredients,
         realSuppliers,
         realIngredients,
+        realPurchaseOrders,
+        demoPurchaseOrders,
         isSuppliersLoading,
         isIngredientsLoading,
+        isPurchaseOrdersLoading,
         suppliersError,
         ingredientsError,
+        purchaseOrdersError,
         fetchRealSuppliers,
         fetchRealIngredients,
+        fetchRealPurchaseOrders,
         requirements,
-        purchaseOrders,
+        purchaseOrders: realPurchaseOrders,
         batchTests,
         catalogProducts,
         marketQueries,

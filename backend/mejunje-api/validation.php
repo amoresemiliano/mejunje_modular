@@ -155,3 +155,90 @@ if (!function_exists('validateIngredientInput')) {
         return $errors;
     }
 }
+
+if (!function_exists('generatePoCode')) {
+    /**
+     * Generate human-readable PO code: OC-<YEAR>-<6 char uppercase hex>
+     * e.g. OC-2026-A1B2C3
+     *
+     * @return string
+     */
+    function generatePoCode(): string {
+        try {
+            $bytes = random_bytes(3);
+        } catch (\Exception $e) {
+            $bytes = openssl_random_pseudo_bytes(3);
+        }
+        return 'OC-' . date('Y') . '-' . strtoupper(bin2hex($bytes));
+    }
+}
+
+if (!function_exists('validatePurchaseOrderInput')) {
+    /**
+     * Validate payload for Purchase Order creation/update.
+     *
+     * @param array $data
+     * @param bool $isUpdate
+     * @param PDO|null $pdo
+     * @return array Array of error messages, empty if valid.
+     */
+    function validatePurchaseOrderInput(array $data, bool $isUpdate = false, ?PDO $pdo = null): array {
+        $errors = [];
+        $validStatuses = ['Borrador', 'Pendiente', 'Solicitada', 'Confirmada', 'Recibida', 'Cancelada'];
+
+        if (!$isUpdate) {
+            if (!isset($data['supplierId']) || trim((string)$data['supplierId']) === '') {
+                $errors[] = "Field 'supplierId' is required and cannot be empty.";
+            } else if ($pdo !== null) {
+                $supId = trim((string)$data['supplierId']);
+                $stmt = $pdo->prepare("SELECT id FROM suppliers WHERE id = :id AND is_active = 1 LIMIT 1");
+                $stmt->execute(['id' => $supId]);
+                if (!$stmt->fetch()) {
+                    $errors[] = "Supplier with ID '{$supId}' was not found or is inactive.";
+                }
+            }
+
+            if (!isset($data['items']) || !is_array($data['items']) || empty($data['items'])) {
+                $errors[] = "Field 'items' is required and must contain at least one ingredient item.";
+            } else if ($pdo !== null && isset($data['supplierId']) && trim((string)$data['supplierId']) !== '') {
+                $supId = trim((string)$data['supplierId']);
+                foreach ($data['items'] as $idx => $item) {
+                    $itemNum = $idx + 1;
+                    if (!isset($item['ingredientId']) || trim((string)$item['ingredientId']) === '') {
+                        $errors[] = "Item #{$itemNum}: Field 'ingredientId' is required.";
+                        continue;
+                    }
+                    $ingId = trim((string)$item['ingredientId']);
+                    $stmt = $pdo->prepare("SELECT id, name, default_supplier_id FROM ingredients WHERE id = :id AND is_active = 1 LIMIT 1");
+                    $stmt->execute(['id' => $ingId]);
+                    $ingRow = $stmt->fetch();
+                    if (!$ingRow) {
+                        $errors[] = "Item #{$itemNum}: Ingredient with ID '{$ingId}' was not found or is inactive.";
+                    } else if ($ingRow['default_supplier_id'] !== null && $ingRow['default_supplier_id'] !== $supId) {
+                        $ingName = $ingRow['name'];
+                        $errors[] = "Item #{$itemNum}: Ingredient '{$ingName}' does not belong to the selected supplier.";
+                    }
+
+                    $qty = isset($item['requiredQty']) ? $item['requiredQty'] : ($item['orderedQty'] ?? ($item['quantity'] ?? null));
+                    if ($qty === null || !is_numeric($qty) || (float)$qty <= 0) {
+                        $errors[] = "Item #{$itemNum}: Quantity must be a numeric value strictly greater than 0.";
+                    }
+
+                    if (!isset($item['unitPriceARS']) || !is_numeric($item['unitPriceARS']) || (float)$item['unitPriceARS'] < 0) {
+                        $errors[] = "Item #{$itemNum}: Unit price must be a numeric value greater than or equal to 0.";
+                    }
+                }
+            }
+
+            if (isset($data['status']) && !in_array((string)$data['status'], $validStatuses, true)) {
+                $errors[] = "Invalid status. Allowed values: " . implode(', ', $validStatuses);
+            }
+        } else {
+            if (array_key_exists('status', $data) && !in_array((string)$data['status'], $validStatuses, true)) {
+                $errors[] = "Invalid status. Allowed values: " . implode(', ', $validStatuses);
+            }
+        }
+
+        return $errors;
+    }
+}
