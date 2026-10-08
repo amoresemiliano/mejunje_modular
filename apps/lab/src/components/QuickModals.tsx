@@ -237,28 +237,36 @@ export default function QuickModals() {
     setActiveModal(null);
   };
 
+  const [isSubmittingSupplier, setIsSubmittingSupplier] = useState(false);
+
   // Handlers for Supplier
-  const handleSaveSupplier = (e: React.FormEvent) => {
+  const handleSaveSupplier = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!supplierForm.name.trim()) {
       showToast('Por favor ingrese el nombre del proveedor.', 'warning');
       return;
     }
 
-    addSupplier({
-      name: supplierForm.name,
-      contactPerson: supplierForm.contactPerson || 'Contacto Ventas',
-      phoneWhatsApp: supplierForm.phoneWhatsApp || '+5491100000000',
-      email: supplierForm.email,
-      web: supplierForm.web,
-      location: supplierForm.location,
-      categoriesSupplied: supplierForm.categoriesSupplied,
-      minPurchaseARS: Number(supplierForm.minPurchaseARS),
-      deliveryTimeDays: Number(supplierForm.deliveryTimeDays),
-      notes: supplierForm.notes,
-    });
-
-    setActiveModal(null);
+    setIsSubmittingSupplier(true);
+    try {
+      await addSupplier({
+        name: supplierForm.name,
+        contactPerson: supplierForm.contactPerson || 'Contacto Ventas',
+        phoneWhatsApp: supplierForm.phoneWhatsApp || '+5491100000000',
+        email: supplierForm.email,
+        web: supplierForm.web,
+        location: supplierForm.location,
+        categoriesSupplied: supplierForm.categoriesSupplied,
+        minPurchaseARS: Number(supplierForm.minPurchaseARS),
+        deliveryTimeDays: Number(supplierForm.deliveryTimeDays),
+        notes: supplierForm.notes,
+      });
+      setActiveModal(null);
+    } catch (err) {
+      // Toast error handled in context wrapper
+    } finally {
+      setIsSubmittingSupplier(false);
+    }
   };
 
   // Handlers for Market Query
@@ -877,9 +885,10 @@ export default function QuickModals() {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 btn-mejunje-primary text-xs rounded-xl shadow-xs flex items-center gap-1.5"
+                  disabled={isSubmittingSupplier}
+                  className="px-5 py-2 btn-mejunje-primary text-xs rounded-xl shadow-xs flex items-center gap-1.5 disabled:opacity-50"
                 >
-                  <Building2 className="w-4 h-4" /> Registrar Proveedor
+                  <Building2 className="w-4 h-4" /> {isSubmittingSupplier ? 'Registrando en MySQL...' : 'Registrar Proveedor'}
                 </button>
               </div>
             </form>
