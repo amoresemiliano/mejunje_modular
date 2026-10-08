@@ -17,7 +17,8 @@ import {
   ShoppingBag,
   X,
   Save,
-  CheckCircle,
+  AlertTriangle,
+  RotateCw,
 } from '@/components/Icons';
 import { useKamelo } from '@/context/KameloContext';
 import { Supplier } from '@/types';
@@ -39,19 +40,26 @@ const ALL_CATEGORIES = [
 
 export default function ProveedoresPage() {
   const {
-    suppliers,
+    realSuppliers,
+    demoSuppliers,
+    isSuppliersLoading,
+    suppliersError,
+    fetchRealSuppliers,
     addSupplier,
     updateSupplier,
     deleteSupplier,
-    requirements,
-    ingredients,
+    realIngredients,
     showToast,
   } = useKamelo();
+
+  // Mode: 'real' (API MySQL) | 'demo' (Ejemplos Sintéticos)
+  const [dataMode, setDataMode] = useState<'real' | 'demo'>('real');
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('Todos');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Form State
   const [form, setForm] = useState<Omit<Supplier, 'id'>>({
@@ -67,7 +75,13 @@ export default function ProveedoresPage() {
     notes: '',
   });
 
+  const activeSuppliers = dataMode === 'real' ? realSuppliers : demoSuppliers;
+
   const openCreateModal = () => {
+    if (dataMode === 'demo') {
+      showToast('Cambiá al modo "Datos Reales (API MySQL)" para crear proveedores operativos.', 'info');
+      return;
+    }
     setEditingSupplier(null);
     setForm({
       name: '',
@@ -85,6 +99,10 @@ export default function ProveedoresPage() {
   };
 
   const openEditModal = (supplier: Supplier) => {
+    if (dataMode === 'demo') {
+      showToast('Los registros de demostración son sólo lectura.', 'info');
+      return;
+    }
     setEditingSupplier(supplier);
     setForm({
       name: supplier.name,
@@ -101,19 +119,26 @@ export default function ProveedoresPage() {
     setIsModalOpen(true);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name.trim()) {
       showToast('Por favor ingrese el nombre del proveedor.', 'warning');
       return;
     }
 
-    if (editingSupplier) {
-      updateSupplier(editingSupplier.id, form);
-    } else {
-      addSupplier(form);
+    setIsSubmitting(true);
+    try {
+      if (editingSupplier) {
+        await updateSupplier(editingSupplier.id, form);
+      } else {
+        await addSupplier(form);
+      }
+      setIsModalOpen(false);
+    } catch (err) {
+      // Error toast is handled in Context API wrapper, keep modal open
+    } finally {
+      setIsSubmitting(false);
     }
-    setIsModalOpen(false);
   };
 
   const toggleFormCategory = (cat: string) => {
@@ -127,14 +152,32 @@ export default function ProveedoresPage() {
     });
   };
 
-  const handleDuplicate = (supplier: Supplier) => {
-    addSupplier({
-      ...supplier,
-      name: `${supplier.name} (Copia)`,
-    });
+  const handleDuplicate = async (supplier: Supplier) => {
+    if (dataMode === 'demo') {
+      showToast('Cambia a modo Datos Reales para crear duplicados.', 'info');
+      return;
+    }
+    try {
+      await addSupplier({
+        ...supplier,
+        name: `${supplier.name} (Copia)`,
+      });
+    } catch (e) {}
   };
 
-  const filteredSuppliers = suppliers.filter((supplier) => {
+  const handleDelete = async (id: string) => {
+    if (dataMode === 'demo') {
+      showToast('Los registros de demostración son sólo lectura.', 'info');
+      return;
+    }
+    if (window.confirm('¿Confirma que desea desactivar (soft delete) este proveedor en la base de datos MySQL real?')) {
+      try {
+        await deleteSupplier(id);
+      } catch (e) {}
+    }
+  };
+
+  const filteredSuppliers = activeSuppliers.filter((supplier) => {
     const matchesSearch =
       supplier.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       supplier.contactPerson.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -143,18 +186,19 @@ export default function ProveedoresPage() {
 
     const matchesCategory =
       selectedCategory === 'Todos' ||
-      supplier.categoriesSupplied.some((cat) => cat.toLowerCase() === selectedCategory.toLowerCase());
+      (supplier.categoriesSupplied &&
+        supplier.categoriesSupplied.some((cat) => cat.toLowerCase() === selectedCategory.toLowerCase()));
 
     return matchesSearch && matchesCategory;
   });
 
   // Calculate stats
-  const totalSuppliers = suppliers.length;
+  const totalSuppliers = activeSuppliers.length;
   const avgDeliveryDays = Math.round(
-    suppliers.reduce((acc, s) => acc + (s.deliveryTimeDays || 0), 0) / (totalSuppliers || 1)
+    activeSuppliers.reduce((acc, s) => acc + (s.deliveryTimeDays || 0), 0) / (totalSuppliers || 1)
   );
   const avgMinPurchase = Math.round(
-    suppliers.reduce((acc, s) => acc + (s.minPurchaseARS || 0), 0) / (totalSuppliers || 1)
+    activeSuppliers.reduce((acc, s) => acc + (s.minPurchaseARS || 0), 0) / (totalSuppliers || 1)
   );
 
   const handleWhatsAppContact = (supplier: Supplier) => {
@@ -175,7 +219,7 @@ export default function ProveedoresPage() {
               Cadena de Suministros
             </span>
             <span className="text-mejunje-arena">·</span>
-            <span className="text-xs text-mejunje-secundario font-typewriter">Buenos Aires</span>
+            <span className="text-xs text-mejunje-secundario font-typewriter">API MySQL BlueHost</span>
           </div>
           <h1 className="text-3xl font-bold tracking-tight text-mejunje-carbon font-typewriter">
             Proveedores & Destilerías
@@ -185,7 +229,32 @@ export default function ProveedoresPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5 self-start md:self-auto">
+        <div className="flex flex-wrap items-center gap-2.5 self-start md:self-auto">
+          {/* Data Mode Switcher */}
+          <div className="bg-mejunje-papel p-1 rounded-xl border border-mejunje-border flex items-center font-typewriter text-xs">
+            <button
+              onClick={() => setDataMode('real')}
+              className={`px-3 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1.5 ${
+                dataMode === 'real'
+                  ? 'bg-mejunje-verdeprofundo text-white shadow-xs'
+                  : 'text-mejunje-secundario hover:text-mejunje-carbon'
+              }`}
+            >
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span>Datos Reales (API)</span>
+            </button>
+            <button
+              onClick={() => setDataMode('demo')}
+              className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
+                dataMode === 'demo'
+                  ? 'bg-amber-700 text-white shadow-xs'
+                  : 'text-mejunje-secundario hover:text-mejunje-carbon'
+              }`}
+            >
+              Ejemplos (Demo)
+            </button>
+          </div>
+
           <Link
             href="/compras"
             className="px-3.5 py-2 btn-mejunje-secondary text-xs rounded-xl flex items-center gap-2 font-typewriter"
@@ -195,7 +264,12 @@ export default function ProveedoresPage() {
           </Link>
           <button
             onClick={openCreateModal}
-            className="btn-mejunje-primary px-4 py-2 rounded-xl text-xs flex items-center gap-2 shadow-xs font-typewriter font-bold"
+            disabled={dataMode === 'demo'}
+            className={`px-4 py-2 rounded-xl text-xs flex items-center gap-2 shadow-xs font-typewriter font-bold ${
+              dataMode === 'demo'
+                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                : 'btn-mejunje-primary'
+            }`}
           >
             <Plus className="w-4 h-4" />
             <span>Nuevo Proveedor</span>
@@ -203,11 +277,49 @@ export default function ProveedoresPage() {
         </div>
       </div>
 
+      {/* Mode Banner if Demo */}
+      {dataMode === 'demo' && (
+        <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-typewriter flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>
+              <strong>MODO DEMOSTRACIÓN:</strong> Estás visualizando registros sintéticos de referencia. Estos datos son de sólo lectura y NO alteran la base de datos MySQL real.
+            </span>
+          </div>
+          <button
+            onClick={() => setDataMode('real')}
+            className="px-3 py-1 bg-amber-700 hover:bg-amber-800 text-white rounded-lg text-xs font-bold shrink-0"
+          >
+            Ir a Datos Reales
+          </button>
+        </div>
+      )}
+
+      {/* Error Alert Bar if API failed */}
+      {dataMode === 'real' && suppliersError && (
+        <div className="p-4 rounded-2xl bg-red-50 border border-red-200 text-red-800 text-xs font-typewriter flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+            <span>
+              <strong>Error de API:</strong> {suppliersError}
+            </span>
+          </div>
+          <button
+            onClick={fetchRealSuppliers}
+            className="px-3 py-1 bg-red-700 hover:bg-red-800 text-white rounded-lg text-xs font-bold flex items-center gap-1 shrink-0"
+          >
+            <RotateCw className="w-3.5 h-3.5" /> Reintentar
+          </button>
+        </div>
+      )}
+
       {/* Stats Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white p-4 rounded-2xl border border-mejunje-border shadow-xs">
           <div className="flex items-center justify-between text-mejunje-secundario mb-2">
-            <span className="text-[11px] font-bold uppercase tracking-wider font-typewriter">Proveedores</span>
+            <span className="text-[11px] font-bold uppercase tracking-wider font-typewriter">
+              Proveedores {dataMode === 'real' ? 'Reales' : 'Demo'}
+            </span>
             <Building2 className="w-4 h-4 text-mejunje-verdeprofundo" />
           </div>
           <p className="text-2xl font-bold text-mejunje-carbon font-typewriter">{totalSuppliers}</p>
@@ -219,8 +331,8 @@ export default function ProveedoresPage() {
             <span className="text-[11px] font-bold uppercase tracking-wider font-typewriter">Insumos Registrados</span>
             <ShoppingBag className="w-4 h-4 text-mejunje-verdeseco" />
           </div>
-          <p className="text-2xl font-bold text-mejunje-verdeprofundo font-typewriter">{ingredients.length}</p>
-          <p className="text-[10px] text-mejunje-secundario font-typewriter mt-0.5">Materias primas en catálogo</p>
+          <p className="text-2xl font-bold text-mejunje-verdeprofundo font-typewriter">{realIngredients.length}</p>
+          <p className="text-[10px] text-mejunje-secundario font-typewriter mt-0.5">Materias primas en MySQL</p>
         </div>
 
         <div className="bg-white p-4 rounded-2xl border border-mejunje-border shadow-xs">
@@ -285,31 +397,44 @@ export default function ProveedoresPage() {
         </div>
       </div>
 
-      {/* Suppliers Grid */}
-      {filteredSuppliers.length === 0 ? (
+      {/* Loading Skeleton */}
+      {dataMode === 'real' && isSuppliersLoading ? (
+        <div className="p-12 bg-white rounded-2xl border border-mejunje-border text-center shadow-xs">
+          <div className="w-8 h-8 border-3 border-mejunje-verdeprofundo border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+          <p className="text-xs text-mejunje-secundario font-typewriter">Cargando proveedores desde API BlueHost MySQL...</p>
+        </div>
+      ) : filteredSuppliers.length === 0 ? (
+        /* Empty State */
         <div className="bg-white rounded-2xl border border-mejunje-border p-12 text-center shadow-xs">
           <div className="w-12 h-12 rounded-full bg-mejunje-papel text-mejunje-secundario mx-auto flex items-center justify-center mb-3">
             <Building2 className="w-6 h-6" />
           </div>
           <h3 className="text-base font-bold text-mejunje-carbon font-typewriter mb-1">
-            No se encontraron proveedores
+            {dataMode === 'real'
+              ? 'No hay proveedores reales registrados en MySQL'
+              : 'No se encontraron proveedores de ejemplo'}
           </h3>
           <p className="text-xs text-mejunje-secundario font-typewriter max-w-md mx-auto mb-4">
-            No hay registros que coincidan con la búsqueda o categoría seleccionada.
+            {dataMode === 'real'
+              ? 'La base de datos MySQL no contiene proveedores activos aún. Podés crear el primer proveedor operativo.'
+              : 'No hay registros que coincidan con la búsqueda o categoría seleccionada.'}
           </p>
-          <button
-            onClick={openCreateModal}
-            className="btn-mejunje-primary px-4 py-2 rounded-xl text-xs inline-flex items-center gap-1.5 font-typewriter font-bold"
-          >
-            <Plus className="w-3.5 h-3.5" /> Agregar Nuevo Proveedor
-          </button>
+          {dataMode === 'real' && (
+            <button
+              onClick={openCreateModal}
+              className="btn-mejunje-primary px-4 py-2 rounded-xl text-xs inline-flex items-center gap-1.5 font-typewriter font-bold"
+            >
+              <Plus className="w-3.5 h-3.5" /> Agregar Nuevo Proveedor Real
+            </button>
+          )}
         </div>
       ) : (
+        /* Suppliers Grid */
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {filteredSuppliers.map((supplier) => {
             // Count ingredients for this supplier
-            const supplierIngCount = ingredients.filter(
-              (i) => i.supplierId === supplier.id || i.supplierName.toLowerCase() === supplier.name.toLowerCase()
+            const supplierIngCount = realIngredients.filter(
+              (i) => i.supplierId === supplier.id || (i.supplierName && i.supplierName.toLowerCase() === supplier.name.toLowerCase())
             ).length;
 
             return (
@@ -321,7 +446,7 @@ export default function ProveedoresPage() {
                   {/* Top Bar: Categories & Deliveries */}
                   <div className="flex items-center justify-between gap-2 mb-3">
                     <div className="flex flex-wrap gap-1">
-                      {supplier.categoriesSupplied.slice(0, 3).map((cat) => (
+                      {supplier.categoriesSupplied && supplier.categoriesSupplied.slice(0, 3).map((cat) => (
                         <span
                           key={cat}
                           className="text-[9px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-mejunje-papel text-mejunje-verdeprofundo border border-mejunje-border font-typewriter"
@@ -329,7 +454,7 @@ export default function ProveedoresPage() {
                           {cat}
                         </span>
                       ))}
-                      {supplier.categoriesSupplied.length > 3 && (
+                      {supplier.categoriesSupplied && supplier.categoriesSupplied.length > 3 && (
                         <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-600 font-typewriter font-bold">
                           +{supplier.categoriesSupplied.length - 3}
                         </span>
@@ -346,7 +471,7 @@ export default function ProveedoresPage() {
                     {supplier.name}
                   </h3>
                   <p className="text-xs text-mejunje-secundario font-typewriter mt-0.5">
-                    Contacto: <strong className="text-mejunje-carbon">{supplier.contactPerson}</strong>
+                    Contacto: <strong className="text-mejunje-carbon">{supplier.contactPerson || 'N/A'}</strong>
                   </p>
 
                   {/* Details Grid */}
@@ -368,10 +493,12 @@ export default function ProveedoresPage() {
                       <span>{supplier.location || 'Buenos Aires'}</span>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      <MessageCircle className="w-3.5 h-3.5 text-mejunje-verdeseco shrink-0" />
-                      <span className="text-mejunje-carbon">{supplier.phoneWhatsApp}</span>
-                    </div>
+                    {supplier.phoneWhatsApp && (
+                      <div className="flex items-center gap-2">
+                        <MessageCircle className="w-3.5 h-3.5 text-mejunje-verdeseco shrink-0" />
+                        <span className="text-mejunje-carbon">{supplier.phoneWhatsApp}</span>
+                      </div>
+                    )}
 
                     {supplier.email && (
                       <div className="flex items-center gap-2 truncate">
@@ -413,21 +540,24 @@ export default function ProveedoresPage() {
                     <button
                       onClick={() => openEditModal(supplier)}
                       title="Editar proveedor"
-                      className="p-1.5 text-mejunje-secundario hover:text-mejunje-verdeprofundo hover:bg-mejunje-papel rounded-lg transition-colors"
+                      disabled={dataMode === 'demo'}
+                      className="p-1.5 text-mejunje-secundario hover:text-mejunje-verdeprofundo hover:bg-mejunje-papel rounded-lg transition-colors disabled:opacity-40"
                     >
                       <Edit3 className="w-4 h-4" />
                     </button>
                     <button
                       onClick={() => handleDuplicate(supplier)}
                       title="Duplicar proveedor"
-                      className="p-1.5 text-mejunje-secundario hover:text-mejunje-carbon hover:bg-mejunje-papel rounded-lg transition-colors"
+                      disabled={dataMode === 'demo'}
+                      className="p-1.5 text-mejunje-secundario hover:text-mejunje-carbon hover:bg-mejunje-papel rounded-lg transition-colors disabled:opacity-40"
                     >
                       <Copy className="w-4 h-4" />
                     </button>
                     <button
-                      onClick={() => deleteSupplier(supplier.id)}
-                      title="Eliminar proveedor"
-                      className="p-1.5 text-mejunje-secundario hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                      onClick={() => handleDelete(supplier.id)}
+                      title="Eliminar proveedor (soft delete)"
+                      disabled={dataMode === 'demo'}
+                      className="p-1.5 text-mejunje-secundario hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-40"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -441,10 +571,11 @@ export default function ProveedoresPage() {
 
       {/* Modal Crear / Editar Proveedor */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-fade-in">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-fade-in font-typewriter">
           <div className="bg-white rounded-2xl border border-mejunje-border shadow-2xl max-w-lg w-full p-6 relative max-h-[90vh] overflow-y-auto">
             <button
-              onClick={() => setIsModalOpen(false)}
+              onClick={() => !isSubmitting && setIsModalOpen(false)}
+              disabled={isSubmitting}
               className="absolute right-4 top-4 text-mejunje-secundario hover:text-mejunje-carbon p-1"
             >
               <X className="w-5 h-5" />
@@ -455,11 +586,11 @@ export default function ProveedoresPage() {
                 <Building2 className="w-5 h-5" />
               </div>
               <div>
-                <h2 className="font-bold text-lg text-mejunje-carbon font-typewriter">
-                  {editingSupplier ? 'Editar Ficha de Proveedor' : 'Nuevo Proveedor'}
+                <h2 className="font-bold text-lg text-mejunje-carbon">
+                  {editingSupplier ? 'Editar Ficha de Proveedor (MySQL API)' : 'Nuevo Proveedor Real (MySQL API)'}
                 </h2>
-                <p className="text-xs text-mejunje-secundario font-typewriter">
-                  Registro de Cadena de Abastecimiento · Buenos Aires
+                <p className="text-xs text-mejunje-secundario">
+                  Persistencia directa en base de datos athcomar_mejunje_dev
                 </p>
               </div>
             </div>
@@ -467,7 +598,7 @@ export default function ProveedoresPage() {
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs uppercase font-bold text-mejunje-carbon font-typewriter mb-1">
+                  <label className="block text-xs uppercase font-bold text-mejunje-carbon mb-1">
                     Razón Social / Nombre *
                   </label>
                   <input
@@ -476,12 +607,13 @@ export default function ProveedoresPage() {
                     placeholder="Ej. Destilería Aromática San Martín"
                     value={form.name}
                     onChange={(e) => setForm({ ...form, name: e.target.value })}
-                    className="w-full bg-white border border-mejunje-border rounded-xl px-3.5 py-2 text-xs text-mejunje-carbon focus:outline-none focus:border-mejunje-verdeseco font-typewriter"
+                    disabled={isSubmitting}
+                    className="w-full bg-white border border-mejunje-border rounded-xl px-3.5 py-2 text-xs text-mejunje-carbon focus:outline-none focus:border-mejunje-verdeseco"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs uppercase font-bold text-mejunje-carbon font-typewriter mb-1">
+                  <label className="block text-xs uppercase font-bold text-mejunje-carbon mb-1">
                     Persona de Contacto
                   </label>
                   <input
@@ -489,28 +621,29 @@ export default function ProveedoresPage() {
                     placeholder="Ej. Juan Pérez"
                     value={form.contactPerson}
                     onChange={(e) => setForm({ ...form, contactPerson: e.target.value })}
-                    className="w-full bg-white border border-mejunje-border rounded-xl px-3.5 py-2 text-xs text-mejunje-carbon focus:outline-none focus:border-mejunje-verdeseco font-typewriter"
+                    disabled={isSubmitting}
+                    className="w-full bg-white border border-mejunje-border rounded-xl px-3.5 py-2 text-xs text-mejunje-carbon focus:outline-none focus:border-mejunje-verdeseco"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs uppercase font-bold text-mejunje-carbon font-typewriter mb-1">
-                    Teléfono WhatsApp *
+                  <label className="block text-xs uppercase font-bold text-mejunje-carbon mb-1">
+                    Teléfono WhatsApp
                   </label>
                   <input
                     type="text"
-                    required
                     placeholder="+54911..."
                     value={form.phoneWhatsApp}
                     onChange={(e) => setForm({ ...form, phoneWhatsApp: e.target.value })}
-                    className="w-full bg-white border border-mejunje-border rounded-xl px-3.5 py-2 text-xs text-mejunje-carbon focus:outline-none focus:border-mejunje-verdeseco font-typewriter"
+                    disabled={isSubmitting}
+                    className="w-full bg-white border border-mejunje-border rounded-xl px-3.5 py-2 text-xs text-mejunje-carbon focus:outline-none focus:border-mejunje-verdeseco"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs uppercase font-bold text-mejunje-carbon font-typewriter mb-1">
+                  <label className="block text-xs uppercase font-bold text-mejunje-carbon mb-1">
                     Correo Electrónico
                   </label>
                   <input
@@ -518,27 +651,29 @@ export default function ProveedoresPage() {
                     placeholder="ventas@proveedor.com.ar"
                     value={form.email}
                     onChange={(e) => setForm({ ...form, email: e.target.value })}
-                    className="w-full bg-white border border-mejunje-border rounded-xl px-3.5 py-2 text-xs text-mejunje-carbon focus:outline-none focus:border-mejunje-verdeseco font-typewriter"
+                    disabled={isSubmitting}
+                    className="w-full bg-white border border-mejunje-border rounded-xl px-3.5 py-2 text-xs text-mejunje-carbon focus:outline-none focus:border-mejunje-verdeseco"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs uppercase font-bold text-mejunje-carbon font-typewriter mb-1">
+                  <label className="block text-xs uppercase font-bold text-mejunje-carbon mb-1">
                     Sitio Web / Catálogo Online
                   </label>
                   <input
                     type="text"
-                    placeholder="www.proveedor.com.ar"
+                    placeholder="https://www.proveedor.com.ar"
                     value={form.web}
                     onChange={(e) => setForm({ ...form, web: e.target.value })}
-                    className="w-full bg-white border border-mejunje-border rounded-xl px-3.5 py-2 text-xs text-mejunje-carbon focus:outline-none focus:border-mejunje-verdeseco font-typewriter"
+                    disabled={isSubmitting}
+                    className="w-full bg-white border border-mejunje-border rounded-xl px-3.5 py-2 text-xs text-mejunje-carbon focus:outline-none focus:border-mejunje-verdeseco"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs uppercase font-bold text-mejunje-carbon font-typewriter mb-1">
+                  <label className="block text-xs uppercase font-bold text-mejunje-carbon mb-1">
                     Ubicación / Ciudad
                   </label>
                   <input
@@ -546,14 +681,15 @@ export default function ProveedoresPage() {
                     placeholder="Buenos Aires"
                     value={form.location}
                     onChange={(e) => setForm({ ...form, location: e.target.value })}
-                    className="w-full bg-white border border-mejunje-border rounded-xl px-3.5 py-2 text-xs text-mejunje-carbon focus:outline-none focus:border-mejunje-verdeseco font-typewriter"
+                    disabled={isSubmitting}
+                    className="w-full bg-white border border-mejunje-border rounded-xl px-3.5 py-2 text-xs text-mejunje-carbon focus:outline-none focus:border-mejunje-verdeseco"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs uppercase font-bold text-mejunje-carbon font-typewriter mb-1">
+                  <label className="block text-xs uppercase font-bold text-mejunje-carbon mb-1">
                     Mínimo de Compra ($)
                   </label>
                   <input
@@ -562,28 +698,30 @@ export default function ProveedoresPage() {
                     placeholder="100000"
                     value={form.minPurchaseARS}
                     onChange={(e) => setForm({ ...form, minPurchaseARS: Number(e.target.value) })}
-                    className="w-full bg-white border border-mejunje-border rounded-xl px-3.5 py-2 text-xs text-mejunje-carbon focus:outline-none focus:border-mejunje-verdeseco font-typewriter"
+                    disabled={isSubmitting}
+                    className="w-full bg-white border border-mejunje-border rounded-xl px-3.5 py-2 text-xs text-mejunje-carbon focus:outline-none focus:border-mejunje-verdeseco"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs uppercase font-bold text-mejunje-carbon font-typewriter mb-1">
+                  <label className="block text-xs uppercase font-bold text-mejunje-carbon mb-1">
                     Plazo de Entrega (Días)
                   </label>
                   <input
                     type="number"
-                    min="1"
+                    min="0"
                     placeholder="3"
                     value={form.deliveryTimeDays}
                     onChange={(e) => setForm({ ...form, deliveryTimeDays: Number(e.target.value) })}
-                    className="w-full bg-white border border-mejunje-border rounded-xl px-3.5 py-2 text-xs text-mejunje-carbon focus:outline-none focus:border-mejunje-verdeseco font-typewriter"
+                    disabled={isSubmitting}
+                    className="w-full bg-white border border-mejunje-border rounded-xl px-3.5 py-2 text-xs text-mejunje-carbon focus:outline-none focus:border-mejunje-verdeseco"
                   />
                 </div>
               </div>
 
               {/* Categories Supplied Selector */}
               <div>
-                <label className="block text-xs uppercase font-bold text-mejunje-carbon font-typewriter mb-1.5">
+                <label className="block text-xs uppercase font-bold text-mejunje-carbon mb-1.5">
                   Rubros que Provee
                 </label>
                 <div className="flex flex-wrap gap-1.5">
@@ -594,7 +732,8 @@ export default function ProveedoresPage() {
                         type="button"
                         key={cat}
                         onClick={() => toggleFormCategory(cat)}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-typewriter transition-all ${
+                        disabled={isSubmitting}
+                        className={`px-2.5 py-1 rounded-lg text-xs transition-all ${
                           isSelected
                             ? 'bg-mejunje-verdeprofundo text-white font-bold'
                             : 'bg-mejunje-papel text-mejunje-secundario hover:text-mejunje-carbon border border-mejunje-border'
@@ -608,7 +747,7 @@ export default function ProveedoresPage() {
               </div>
 
               <div>
-                <label className="block text-xs uppercase font-bold text-mejunje-carbon font-typewriter mb-1">
+                <label className="block text-xs uppercase font-bold text-mejunje-carbon mb-1">
                   Notas / Observaciones de Calidad
                 </label>
                 <textarea
@@ -616,7 +755,8 @@ export default function ProveedoresPage() {
                   placeholder="Pureza de materias primas, acuerdos de pago, datos de cuenta bancaria..."
                   value={form.notes}
                   onChange={(e) => setForm({ ...form, notes: e.target.value })}
-                  className="w-full bg-white border border-mejunje-border rounded-xl p-3 text-xs text-mejunje-carbon focus:outline-none focus:border-mejunje-verdeseco font-typewriter resize-none"
+                  disabled={isSubmitting}
+                  className="w-full bg-white border border-mejunje-border rounded-xl p-3 text-xs text-mejunje-carbon focus:outline-none focus:border-mejunje-verdeseco resize-none"
                 />
               </div>
 
@@ -624,16 +764,27 @@ export default function ProveedoresPage() {
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 btn-mejunje-secondary text-xs rounded-xl font-typewriter"
+                  disabled={isSubmitting}
+                  className="px-4 py-2 btn-mejunje-secondary text-xs rounded-xl"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 btn-mejunje-primary text-xs rounded-xl shadow-xs flex items-center gap-1.5 font-typewriter font-bold"
+                  disabled={isSubmitting}
+                  className="px-5 py-2 btn-mejunje-primary text-xs rounded-xl shadow-xs flex items-center gap-1.5 font-bold disabled:opacity-50"
                 >
-                  <Save className="w-3.5 h-3.5" />
-                  <span>{editingSupplier ? 'Guardar Cambios' : 'Registrar Proveedor'}</span>
+                  {isSubmitting ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>Guardando en API...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-3.5 h-3.5" />
+                      <span>{editingSupplier ? 'Guardar Cambios' : 'Registrar Proveedor Real'}</span>
+                    </>
+                  )}
                 </button>
               </div>
             </form>

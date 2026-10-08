@@ -30,12 +30,34 @@ import {
   mockActivityLogs,
   mockClients
 } from '@/data/mockData';
+import {
+  getSuppliersApi,
+  createSupplierApi,
+  updateSupplierApi,
+  deleteSupplierApi,
+  CreateSupplierInput,
+  UpdateSupplierInput,
+  getIngredientsApi,
+  createIngredientApi,
+  updateIngredientApi,
+  deleteIngredientApi,
+  CreateIngredientInput,
+  UpdateIngredientInput,
+} from '@/services/api';
 
 interface KameloContextType {
   // State
   formulas: Formula[];
   ingredients: Ingredient[];
   suppliers: Supplier[];
+  demoSuppliers: Supplier[];
+  demoIngredients: Ingredient[];
+  realSuppliers: Supplier[];
+  realIngredients: Ingredient[];
+  isSuppliersLoading: boolean;
+  isIngredientsLoading: boolean;
+  suppliersError: string | null;
+  ingredientsError: string | null;
   requirements: SupplierRequirementGroup[];
   purchaseOrders: PurchaseOrder[];
   batchTests: BatchTest[];
@@ -53,6 +75,10 @@ interface KameloContextType {
   removeToast: (id: string) => void;
   addActivityLog: (title: string, description: string, type: ActivityLog['type']) => void;
 
+  // API Reload Actions
+  fetchRealSuppliers: () => Promise<void>;
+  fetchRealIngredients: () => Promise<void>;
+
   // Formulas CRUD
   addFormula: (formula: Omit<Formula, 'id'>) => Formula;
   updateFormula: (id: string, formula: Partial<Formula>) => void;
@@ -65,15 +91,15 @@ interface KameloContextType {
   deleteClient: (id: string) => void;
   duplicateClient: (id: string) => void;
 
-  // Insumos CRUD
-  addIngredient: (ingredient: Omit<Ingredient, 'id' | 'lastUpdated'>) => Ingredient;
-  updateIngredient: (id: string, ingredient: Partial<Ingredient>) => void;
-  deleteIngredient: (id: string) => void;
+  // Insumos CRUD (API-backed)
+  addIngredient: (ingredient: CreateIngredientInput) => Promise<Ingredient>;
+  updateIngredient: (id: string, ingredient: UpdateIngredientInput) => Promise<void>;
+  deleteIngredient: (id: string) => Promise<void>;
 
-  // Suppliers CRUD
-  addSupplier: (supplier: Omit<Supplier, 'id'>) => Supplier;
-  updateSupplier: (id: string, supplier: Partial<Supplier>) => void;
-  deleteSupplier: (id: string) => void;
+  // Suppliers CRUD (API-backed)
+  addSupplier: (supplier: CreateSupplierInput) => Promise<Supplier>;
+  updateSupplier: (id: string, supplier: UpdateSupplierInput) => Promise<void>;
+  deleteSupplier: (id: string) => Promise<void>;
 
   // Purchase Requirements & Orders
   sendBatchToRequirements: (
@@ -118,8 +144,17 @@ const LOCAL_STORAGE_KEY = 'kamelo_v2_app_state';
 
 export const KameloProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [formulas, setFormulas] = useState<Formula[]>(mockFormulas);
-  const [ingredients, setIngredients] = useState<Ingredient[]>(mockIngredients);
-  const [suppliers, setSuppliers] = useState<Supplier[]>(mockSuppliers);
+  const [demoIngredients] = useState<Ingredient[]>(mockIngredients);
+  const [demoSuppliers] = useState<Supplier[]>(mockSuppliers);
+
+  // REAL API State for Suppliers & Ingredients
+  const [realSuppliers, setRealSuppliers] = useState<Supplier[]>([]);
+  const [realIngredients, setRealIngredients] = useState<Ingredient[]>([]);
+  const [isSuppliersLoading, setIsSuppliersLoading] = useState<boolean>(true);
+  const [isIngredientsLoading, setIsIngredientsLoading] = useState<boolean>(true);
+  const [suppliersError, setSuppliersError] = useState<string | null>(null);
+  const [ingredientsError, setIngredientsError] = useState<string | null>(null);
+
   const [requirements, setRequirements] = useState<SupplierRequirementGroup[]>(mockSupplierGroups);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>(mockPurchaseOrders);
   const [batchTests, setBatchTests] = useState<BatchTest[]>(mockBatchTests);
@@ -131,15 +166,50 @@ export const KameloProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [clients, setClients] = useState<ClientContact[]>(mockClients);
   const [activeModal, setActiveModal] = useState<string | null>(null);
 
-  // Hydrate from localStorage on initial load
+  // Fetch Suppliers from PHP REST API
+  const fetchRealSuppliers = async () => {
+    setIsSuppliersLoading(true);
+    setSuppliersError(null);
+    try {
+      const data = await getSuppliersApi();
+      setRealSuppliers(data);
+    } catch (e: any) {
+      console.error('Failed to load real suppliers from API:', e);
+      setSuppliersError(e.message || 'Error al cargar proveedores de la API.');
+    } finally {
+      setIsSuppliersLoading(false);
+    }
+  };
+
+  // Fetch Ingredients from PHP REST API
+  const fetchRealIngredients = async () => {
+    setIsIngredientsLoading(true);
+    setIngredientsError(null);
+    try {
+      const data = await getIngredientsApi();
+      setRealIngredients(data);
+    } catch (e: any) {
+      console.error('Failed to load real ingredients from API:', e);
+      setIngredientsError(e.message || 'Error al cargar insumos de la API.');
+    } finally {
+      setIsIngredientsLoading(false);
+    }
+  };
+
+  // Initial API Load
+  useEffect(() => {
+    fetchRealSuppliers();
+    fetchRealIngredients();
+  }, []);
+
+  // Hydrate from localStorage on initial load (EXCLUDES suppliers & ingredients as real source of truth)
   useEffect(() => {
     try {
       const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed.formulas) setFormulas(parsed.formulas);
-        if (parsed.ingredients) setIngredients(parsed.ingredients);
-        if (parsed.suppliers) setSuppliers(parsed.suppliers);
+        // Note: localStorage suppliers and ingredients are ignored for real operational state
         if (parsed.requirements) setRequirements(parsed.requirements);
         if (parsed.purchaseOrders) setPurchaseOrders(parsed.purchaseOrders);
         if (parsed.batchTests) setBatchTests(parsed.batchTests);
@@ -154,13 +224,11 @@ export const KameloProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   }, []);
 
-  // Save to localStorage on changes
+  // Save to localStorage on changes (EXCLUDES suppliers and ingredients)
   useEffect(() => {
     try {
       const stateToSave = {
         formulas,
-        ingredients,
-        suppliers,
         requirements,
         purchaseOrders,
         batchTests,
@@ -176,8 +244,6 @@ export const KameloProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   }, [
     formulas,
-    ingredients,
-    suppliers,
     requirements,
     purchaseOrders,
     batchTests,
@@ -301,91 +367,131 @@ export const KameloProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // ---------------------------------------------------------------------------
   // INSUMOS / INGREDIENTES CRUD
   // ---------------------------------------------------------------------------
-  const addIngredient = (ingData: Omit<Ingredient, 'id' | 'lastUpdated'>): Ingredient => {
-    const newId = `ing-${Date.now()}`;
-    const today = new Date().toLocaleDateString('es-AR');
-    const newIng: Ingredient = { ...ingData, id: newId, lastUpdated: today };
-    setIngredients((prev) => [newIng, ...prev]);
-    addActivityLog('Insumo Registrado', `Nuevo insumo "${newIng.name}" cargado a ${newIng.purchasePriceARS.toLocaleString('es-AR')}.`, 'supplier');
-    showToast(`Insumo "${newIng.name}" agregado a laboratorio.`);
-    return newIng;
-  };
-
-  const updateIngredient = (id: string, partial: Partial<Ingredient>) => {
-    const today = new Date().toLocaleDateString('es-AR');
-    setIngredients((prev) =>
-      prev.map((i) => (i.id === id ? { ...i, ...partial, lastUpdated: today } : i))
-    );
-    addActivityLog('Insumo Modificado', `Costo o stock actualizado para insumo.`, 'supplier');
-    showToast('Insumo actualizado correctamente.');
-  };
-
-  const deleteIngredient = (id: string) => {
-    const target = ingredients.find((i) => i.id === id);
-    setIngredients((prev) => prev.filter((i) => i.id !== id));
-    if (target) {
-      addActivityLog('Insumo Eliminado', `Insumo "${target.name}" removido.`, 'supplier');
-      showToast(`Insumo "${target.name}" eliminado.`, 'info');
-    }
-  };
-
   // ---------------------------------------------------------------------------
-  // SUPPLIERS CRUD
+  // INSUMOS / INGREDIENTES CRUD (API-backed)
   // ---------------------------------------------------------------------------
-  const addSupplier = (supplierData: Omit<Supplier, 'id'>): Supplier => {
-    const newId = `sup-${Date.now()}`;
-    const newSupplier: Supplier = { ...supplierData, id: newId };
-    setSuppliers((prev) => [newSupplier, ...prev]);
-    
-    // Also create empty requirement group for this supplier
-    setRequirements((prev) => [
-      ...prev,
-      {
-        supplierId: newId,
-        supplierName: newSupplier.name,
-        minPurchaseARS: newSupplier.minPurchaseARS,
-        requirements: [],
-        totalARS: 0,
-        meetsMinimum: false,
-      },
-    ]);
-
-    addActivityLog('Proveedor Agregado', `Nuevo proveedor "${newSupplier.name}" habilitado.`, 'supplier');
-    showToast(`Proveedor "${newSupplier.name}" registrado.`);
-    return newSupplier;
-  };
-
-  const updateSupplier = (id: string, partial: Partial<Supplier>) => {
-    setSuppliers((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, ...partial } : s))
-    );
-    // Sync supplier name in requirement groups
-    if (partial.name || partial.minPurchaseARS !== undefined) {
-      setRequirements((prev) =>
-        prev.map((r) => {
-          if (r.supplierId === id) {
-            const minP = partial.minPurchaseARS !== undefined ? partial.minPurchaseARS : r.minPurchaseARS;
-            return {
-              ...r,
-              supplierName: partial.name || r.supplierName,
-              minPurchaseARS: minP,
-              meetsMinimum: r.totalARS >= minP,
-            };
-          }
-          return r;
-        })
+  const addIngredient = async (ingInput: CreateIngredientInput): Promise<Ingredient> => {
+    try {
+      const created = await createIngredientApi(ingInput);
+      setRealIngredients((prev) => [created, ...prev.filter((i) => i.id !== created.id)]);
+      addActivityLog(
+        'Insumo Registrado (API)',
+        `Nueva materia prima "${created.name}" registrada en MySQL.`,
+        'supplier'
       );
+      showToast(`Materia prima "${created.name}" registrada exitosamente en MySQL.`);
+      return created;
+    } catch (e: any) {
+      console.error('Failed to create ingredient via API:', e);
+      showToast(e.message || 'Error al registrar materia prima en la API.', 'error');
+      throw e;
     }
-    showToast('Proveedor actualizado.');
   };
 
-  const deleteSupplier = (id: string) => {
-    const target = suppliers.find((s) => s.id === id);
-    setSuppliers((prev) => prev.filter((s) => s.id !== id));
-    setRequirements((prev) => prev.filter((r) => r.supplierId !== id));
-    if (target) {
-      addActivityLog('Proveedor Eliminado', `Proveedor "${target.name}" removido.`, 'supplier');
-      showToast(`Proveedor "${target.name}" eliminado.`, 'info');
+  const updateIngredient = async (id: string, partial: UpdateIngredientInput): Promise<void> => {
+    try {
+      const updated = await updateIngredientApi(id, partial);
+      setRealIngredients((prev) => prev.map((i) => (i.id === id ? updated : i)));
+      addActivityLog('Insumo Modificado (API)', `Materia prima "${updated.name}" actualizada en MySQL.`, 'supplier');
+      showToast('Materia prima actualizada correctamente en MySQL.');
+    } catch (e: any) {
+      console.error('Failed to update ingredient via API:', e);
+      showToast(e.message || 'Error al actualizar materia prima en la API.', 'error');
+      throw e;
+    }
+  };
+
+  const deleteIngredient = async (id: string): Promise<void> => {
+    const target = realIngredients.find((i) => i.id === id);
+    try {
+      await deleteIngredientApi(id);
+      setRealIngredients((prev) => prev.filter((i) => i.id !== id));
+      if (target) {
+        addActivityLog('Insumo Eliminado (API)', `Materia prima "${target.name}" desactivada en MySQL.`, 'supplier');
+        showToast(`Materia prima "${target.name}" eliminada (soft delete).`, 'info');
+      }
+    } catch (e: any) {
+      console.error('Failed to delete ingredient via API:', e);
+      showToast(e.message || 'Error al eliminar materia prima en la API.', 'error');
+      throw e;
+    }
+  };
+
+  // ---------------------------------------------------------------------------
+  // SUPPLIERS CRUD (API-backed)
+  // ---------------------------------------------------------------------------
+  const addSupplier = async (supplierInput: CreateSupplierInput): Promise<Supplier> => {
+    try {
+      const created = await createSupplierApi(supplierInput);
+      setRealSuppliers((prev) => [created, ...prev.filter((s) => s.id !== created.id)]);
+      
+      // Also sync requirement group
+      setRequirements((prev) => [
+        ...prev,
+        {
+          supplierId: created.id,
+          supplierName: created.name,
+          minPurchaseARS: created.minPurchaseARS || 0,
+          requirements: [],
+          totalARS: 0,
+          meetsMinimum: false,
+        },
+      ]);
+
+      addActivityLog('Proveedor Registrado (API)', `Nuevo proveedor "${created.name}" registrado en MySQL.`, 'supplier');
+      showToast(`Proveedor "${created.name}" registrado exitosamente en MySQL.`);
+      return created;
+    } catch (e: any) {
+      console.error('Failed to create supplier via API:', e);
+      showToast(e.message || 'Error al registrar proveedor en la API.', 'error');
+      throw e;
+    }
+  };
+
+  const updateSupplier = async (id: string, partial: UpdateSupplierInput): Promise<void> => {
+    try {
+      const updated = await updateSupplierApi(id, partial);
+      setRealSuppliers((prev) => prev.map((s) => (s.id === id ? updated : s)));
+      
+      if (updated.name || updated.minPurchaseARS !== undefined) {
+        setRequirements((prev) =>
+          prev.map((r) => {
+            if (r.supplierId === id) {
+              const minP = updated.minPurchaseARS !== undefined ? updated.minPurchaseARS : r.minPurchaseARS;
+              return {
+                ...r,
+                supplierName: updated.name || r.supplierName,
+                minPurchaseARS: minP,
+                meetsMinimum: r.totalARS >= minP,
+              };
+            }
+            return r;
+          })
+        );
+      }
+
+      showToast('Proveedor actualizado correctamente en MySQL.');
+    } catch (e: any) {
+      console.error('Failed to update supplier via API:', e);
+      showToast(e.message || 'Error al actualizar proveedor en la API.', 'error');
+      throw e;
+    }
+  };
+
+  const deleteSupplier = async (id: string): Promise<void> => {
+    const target = realSuppliers.find((s) => s.id === id);
+    try {
+      await deleteSupplierApi(id);
+      setRealSuppliers((prev) => prev.filter((s) => s.id !== id));
+      setRequirements((prev) => prev.filter((r) => r.supplierId !== id));
+      if (target) {
+        addActivityLog('Proveedor Eliminado (API)', `Proveedor "${target.name}" desactivado en MySQL.`, 'supplier');
+        showToast(`Proveedor "${target.name}" eliminado (soft delete).`, 'info');
+      }
+    } catch (e: any) {
+      console.error('Failed to delete supplier via API:', e);
+      showToast(e.message || 'Error al eliminar proveedor en la API.', 'error');
+      throw e;
     }
   };
 
@@ -403,7 +509,7 @@ export const KameloProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         let groupIndex = updated.findIndex((g) => g.supplierName.toLowerCase() === suppName.toLowerCase());
 
         if (groupIndex === -1) {
-          const matchedSup = suppliers.find((s) => s.name.toLowerCase() === suppName.toLowerCase());
+          const matchedSup = realSuppliers.find((s) => s.name.toLowerCase() === suppName.toLowerCase()) || demoSuppliers.find((s) => s.name.toLowerCase() === suppName.toLowerCase());
           const supId = matchedSup ? matchedSup.id : `sup-${Date.now()}`;
           const minP = matchedSup ? matchedSup.minPurchaseARS : 100000;
           updated.push({
@@ -770,8 +876,18 @@ export const KameloProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     <KameloContext.Provider
       value={{
         formulas,
-        ingredients,
-        suppliers,
+        ingredients: realIngredients,
+        suppliers: realSuppliers,
+        demoSuppliers,
+        demoIngredients,
+        realSuppliers,
+        realIngredients,
+        isSuppliersLoading,
+        isIngredientsLoading,
+        suppliersError,
+        ingredientsError,
+        fetchRealSuppliers,
+        fetchRealIngredients,
         requirements,
         purchaseOrders,
         batchTests,

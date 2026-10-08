@@ -58,6 +58,8 @@ import {
   Menu as LucideMenu,
   PanelLeft as LucidePanelLeft,
   PanelLeftClose as LucidePanelLeftClose,
+  Database as LucideDatabase,
+  RotateCw as LucideRotateCw,
 } from 'lucide-react';
 
 export {
@@ -228,6 +230,8 @@ export const MessageCircle = LucideMessageCircle;
 export const Flower2 = LucideFlower2;
 export const CompassIcon = Compass;
 export const ScalesIcon = Scale;
+export const Database = LucideDatabase;
+export const RotateCw = LucideRotateCw;
 
 // Micro-illustrations for editorial embellishments
 
