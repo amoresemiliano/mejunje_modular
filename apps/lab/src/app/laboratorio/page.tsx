@@ -154,8 +154,8 @@ export default function LaboratorioPage() {
 
   const filteredInsumos = activeInsumos.filter((ing) => {
     const matchesSearch =
-      ing.name.toLowerCase().includes(insumoSearch.toLowerCase()) ||
-      ing.supplierName.toLowerCase().includes(insumoSearch.toLowerCase());
+      (ing.name || '').toLowerCase().includes(insumoSearch.toLowerCase()) ||
+      (ing.supplierName || '').toLowerCase().includes(insumoSearch.toLowerCase());
     const matchesCat = insumoCategoryFilter === 'Todas' || ing.category === insumoCategoryFilter;
     return matchesSearch && matchesCat;
   });
