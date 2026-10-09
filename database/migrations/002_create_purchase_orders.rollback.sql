@@ -4,9 +4,5 @@
 -- Target Database: DEV (athcomar_mejunje_dev) / PROD (athcomar_mejunje_prod)
 -- Domain Vertical: Purchase Orders + Items
 
-SET FOREIGN_KEY_CHECKS = 0;
-
 DROP TABLE IF EXISTS purchase_order_items;
 DROP TABLE IF EXISTS purchase_orders;
-
-SET FOREIGN_KEY_CHECKS = 1;

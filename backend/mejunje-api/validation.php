@@ -214,9 +214,9 @@ if (!function_exists('validatePurchaseOrderInput')) {
                     $ingRow = $stmt->fetch();
                     if (!$ingRow) {
                         $errors[] = "Item #{$itemNum}: Ingredient with ID '{$ingId}' was not found or is inactive.";
-                    } else if ($ingRow['default_supplier_id'] !== null && $ingRow['default_supplier_id'] !== $supId) {
+                    } else if ($ingRow['default_supplier_id'] !== $supId) {
                         $ingName = $ingRow['name'];
-                        $errors[] = "Item #{$itemNum}: Ingredient '{$ingName}' does not belong to the selected supplier.";
+                        $errors[] = "Item #{$itemNum}: Ingredient '{$ingName}' is unassigned or does not belong to the selected supplier.";
                     }
 
                     $qty = isset($item['requiredQty']) ? $item['requiredQty'] : ($item['orderedQty'] ?? ($item['quantity'] ?? null));
@@ -230,8 +230,13 @@ if (!function_exists('validatePurchaseOrderInput')) {
                 }
             }
 
-            if (isset($data['status']) && !in_array((string)$data['status'], $validStatuses, true)) {
-                $errors[] = "Invalid status. Allowed values: " . implode(', ', $validStatuses);
+            if (isset($data['status'])) {
+                $statusStr = trim((string)$data['status']);
+                if ($statusStr === 'Recibida') {
+                    $errors[] = "Purchase Orders cannot be created directly with status 'Recibida'. Please create as 'Solicitada' or 'Confirmada' and transition to 'Recibida' upon stock arrival.";
+                } else if (!in_array($statusStr, $validStatuses, true)) {
+                    $errors[] = "Invalid status. Allowed values: " . implode(', ', $validStatuses);
+                }
             }
         } else {
             if (array_key_exists('status', $data) && !in_array((string)$data['status'], $validStatuses, true)) {

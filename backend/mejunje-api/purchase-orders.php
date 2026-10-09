@@ -195,20 +195,6 @@ switch ($method) {
                 ]);
             }
 
-            // If initial status created as 'Recibida', increment stock immediately
-            if ($status === 'Recibida') {
-                foreach ($compiledItems as $cItem) {
-                    if ($cItem['ingredient_id'] !== null) {
-                        $stockStmt = $pdo->prepare("UPDATE ingredients SET stock = stock + :qty WHERE id = :ing_id AND is_active = 1");
-                        $stockStmt->execute([
-                            'qty'    => $cItem['ordered_qty'],
-                            'ing_id' => $cItem['ingredient_id']
-                        ]);
-                    }
-                }
-                $pdo->prepare("UPDATE purchase_orders SET received_at = NOW() WHERE id = :id")->execute(['id' => $newPoId]);
-            }
-
             $pdo->commit();
 
             // Fetch newly created PO
@@ -268,17 +254,38 @@ switch ($method) {
             // ATOMIC RECEIVING & STOCK INCREMENT WORKFLOW
             $newReceivedAt = $currentReceivedAt;
             if ($newStatus === 'Recibida' && $currentStatus !== 'Recibida' && $currentReceivedAt === null) {
-                $itemsStmt = $pdo->prepare("SELECT ingredient_id, ordered_qty FROM purchase_order_items WHERE purchase_order_id = :po_id");
+                $itemsStmt = $pdo->prepare("SELECT ingredient_id, ingredient_name, ordered_qty FROM purchase_order_items WHERE purchase_order_id = :po_id");
                 $itemsStmt->execute(['po_id' => $targetId]);
                 $itemsToReceive = $itemsStmt->fetchAll();
 
+                // PASS 1: Lock & verify every linked ingredient exists and is active
                 foreach ($itemsToReceive as $itemRec) {
-                    if (!empty($itemRec['ingredient_id'])) {
+                    if ($itemRec['ingredient_id'] !== null) {
+                        $ingId = $itemRec['ingredient_id'];
+                        $ingLockStmt = $pdo->prepare("SELECT id, name, is_active FROM ingredients WHERE id = :ing_id FOR UPDATE");
+                        $ingLockStmt->execute(['ing_id' => $ingId]);
+                        $ingRow = $ingLockStmt->fetch();
+
+                        if (!$ingRow || (int)$ingRow['is_active'] !== 1) {
+                            $ingName = !empty($itemRec['ingredient_name']) ? $itemRec['ingredient_name'] : ($ingRow['name'] ?? $ingId);
+                            $pdo->rollBack();
+                            sendError('VALIDATION_ERROR', "Cannot receive Purchase Order: linked ingredient '{$ingName}' is missing or inactive.", 400);
+                        }
+                    }
+                }
+
+                // PASS 2: Perform stock increments and verify rowCount === 1
+                foreach ($itemsToReceive as $itemRec) {
+                    if ($itemRec['ingredient_id'] !== null) {
                         $stockStmt = $pdo->prepare("UPDATE ingredients SET stock = stock + :qty WHERE id = :ing_id AND is_active = 1");
                         $stockStmt->execute([
                             'qty'    => (float)$itemRec['ordered_qty'],
                             'ing_id' => $itemRec['ingredient_id']
                         ]);
+
+                        if ($stockStmt->rowCount() !== 1) {
+                            throw new RuntimeException("Failed to update stock for ingredient ID '{$itemRec['ingredient_id']}'.");
+                        }
                     }
                 }
 
