@@ -5,7 +5,7 @@
 require_once __DIR__ . '/../business-core.php';
 class LocalDatabase extends PDO {
     public function __construct() { parent::__construct('sqlite::memory:', null, null, [PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]); }
-    public function prepare(string $query, array $options = []): PDOStatement|false { return parent::prepare(str_replace(' FOR UPDATE','',$query),$options); }
+    public function prepare(string $query, array $options = []): PDOStatement|false { return parent::prepare(str_replace([' FOR UPDATE','NOW()'],['','CURRENT_TIMESTAMP'],$query),$options); }
 }
 $db = new LocalDatabase();
 $db->exec('PRAGMA foreign_keys = ON');
@@ -15,7 +15,7 @@ $db->exec('CREATE TABLE ingredients (id TEXT PRIMARY KEY, name TEXT, category TE
 foreach (['clients','formulas','catalog_products','formula_ingredients','product_variants'] as $table) {
     $columns = ['id TEXT PRIMARY KEY'];
     foreach (businessSchema($table) as $field) $columns[] = businessColumn($field) . (in_array($field,['sku'],true) ? ' TEXT UNIQUE' : (preg_match('/CostARS$|PriceARS$|Percent$|^quantity$|^percentage$|^yieldUnits$|^batchSizeGrams$/',$field) ? ' NUMERIC' : ' TEXT'));
-    if (in_array($table,['clients','formulas','catalog_products'],true)) $columns[]='is_active INTEGER DEFAULT 1';
+    if (in_array($table,['clients','formulas','catalog_products'],true)) { $columns[]='is_active INTEGER DEFAULT 1'; $columns[]='updated_at TEXT'; }
     $db->exec("CREATE TABLE $table (".implode(',',$columns).')');
 }
 $count=0;
@@ -77,4 +77,50 @@ businessDelete($db,'catalog_products',$p['id']);
 rejects(fn()=>businessRead($db,'catalog_products',$p['id']),'product soft delete');
 businessDelete($db,'formulas',$f['id']);
 rejects(fn()=>businessRead($db,'formulas',$f['id']),'formula soft delete');
+// Formula deletion must unlink every active product without changing its variants.
+$lifecycleFormula=businessSave($db,'formulas',$formula);
+$linked=businessSave($db,'catalog_products',array_replace($product,['sku'=>'LIFECYCLE','formulaId'=>$lifecycleFormula['id'],'variants'=>[array_replace($variant,['sku'=>'LIFECYCLE-V']),array_replace($variant,['sku'=>'LIFECYCLE-V2','salePriceARS'=>270,'marginPercent'=>80])]]));
+$second=businessSave($db,'catalog_products',array_replace($product,['sku'=>'SECOND','formulaId'=>$lifecycleFormula['id'],'variants'=>[array_replace($variant,['sku'=>'SECOND-V'])]]));
+$inactiveProduct=businessSave($db,'catalog_products',array_replace($product,['sku'=>'INACTIVE','formulaId'=>$lifecycleFormula['id'],'variants'=>[array_replace($variant,['sku'=>'INACTIVE-V'])]]));
+businessDelete($db,'catalog_products',$inactiveProduct['id']);
+function rawRow(PDO $db, string $table, string $id): array {
+    $stmt=$db->prepare("SELECT * FROM $table WHERE id = ?"); $stmt->execute([$id]); return $stmt->fetch();
+}
+$snapshot=$linked['variants'];
+check($linked['formulaId']===$lifecycleFormula['id'] && $linked['formulaName']===$lifecycleFormula['name'],'active product starts linked to active formula');
+// An unlink failure must leave both active products linked and the formula active.
+$db->exec("CREATE TRIGGER fail_unlink BEFORE UPDATE OF formula_id ON catalog_products WHEN NEW.formula_id IS NULL BEGIN SELECT RAISE(ABORT, 'injected unlink failure'); END");
+rejects(fn()=>businessDelete($db,'formulas',$lifecycleFormula['id']),'unlink failure rejects formula deletion');
+check((int)rawRow($db,'formulas',$lifecycleFormula['id'])['is_active']===1 && businessRead($db,'catalog_products',$linked['id'])['formulaId']===$lifecycleFormula['id'] && !$db->inTransaction(),'unlink failure rolls back and closes transaction');
+$db->exec('DROP TRIGGER fail_unlink');
+// Fail after the unlink has executed to prove it is restored with the formula.
+$db->exec("CREATE TRIGGER fail_formula_delete BEFORE UPDATE OF is_active ON formulas WHEN NEW.is_active = 0 BEGIN SELECT RAISE(ABORT, 'injected formula delete failure'); END");
+rejects(fn()=>businessDelete($db,'formulas',$lifecycleFormula['id']),'formula write failure rejects deletion after unlink');
+check((int)rawRow($db,'formulas',$lifecycleFormula['id'])['is_active']===1 && businessRead($db,'catalog_products',$linked['id'])['formulaId']===$lifecycleFormula['id'] && businessRead($db,'catalog_products',$second['id'])['formulaName']===$lifecycleFormula['name'] && !$db->inTransaction(),'failed delete restores all active product links and formula');
+check(businessRead($db,'catalog_products',$linked['id'])['variants']===$snapshot,'failed transaction preserves variants');
+$db->exec('DROP TRIGGER fail_formula_delete');
+businessDelete($db,'formulas',$lifecycleFormula['id']);
+$deletedFormula=rawRow($db,'formulas',$lifecycleFormula['id']);
+$unlinkedProduct=businessRead($db,'catalog_products',$linked['id']);
+check((int)$deletedFormula['is_active']===0 && $deletedFormula['updated_at']!==null,'formula soft deleted with timestamp');
+check((int)rawRow($db,'catalog_products',$linked['id'])['is_active']===1,'linked product remains active');
+check($unlinkedProduct['formulaId']===null && $unlinkedProduct['formulaName']===null,'active product formula ID and name cleared');
+check(rawRow($db,'catalog_products',$linked['id'])['updated_at']!==null && businessRead($db,'catalog_products',$second['id'])['formulaId']===null,'all active linked products unlinked with timestamp');
+check(rawRow($db,'catalog_products',$inactiveProduct['id'])['formula_id']===$lifecycleFormula['id'],'inactive products left unchanged');
+check($unlinkedProduct['variants']===$snapshot,'variant rows and IDs remain intact');
+foreach (['estimatedCostARS','suggestedSalePriceARS','salePriceARS','marginPercent'] as $field) check($unlinkedProduct['variants'][0][$field]===$snapshot[0][$field],"formula deletion preserves $field");
+$editedProduct=businessSave($db,'catalog_products',['name'=>'Editable after formula deletion'],$linked['id']);
+check($editedProduct['name']==='Editable after formula deletion' && $editedProduct['formulaId']===null,'unlinked product can subsequently be updated');
+check($editedProduct['variants'][0]['estimatedCostARS']===$snapshot[0]['estimatedCostARS'] && $editedProduct['variants'][0]['salePriceARS']===$snapshot[0]['salePriceARS'],'subsequent edit retains cost snapshot and approved price');
+function rejectsNotFound(callable $fn, string $label): void {
+    try { $fn(); }
+    catch (OutOfBoundsException $e) { check($e->getMessage()==='Record not found or inactive.',$label); return; }
+    throw new RuntimeException("Expected not found: $label");
+}
+rejectsNotFound(fn()=>businessDelete($db,'formulas',$lifecycleFormula['id']),'already inactive formula returns not found');
+rejectsNotFound(fn()=>businessDelete($db,'formulas','form-0000000000000000'),'nonexistent formula returns not found');
+check(!$db->inTransaction(),'not-found deletion leaves no open transaction');
+$unlinkedFormula=businessSave($db,'formulas',$formula);
+businessDelete($db,'formulas',$unlinkedFormula['id']);
+check((int)rawRow($db,'formulas',$unlinkedFormula['id'])['is_active']===0,'deleting an unlinked formula succeeds');
 echo "$count assertions passed (local SQLite SQL adapter; MySQL locking not tested).\n";

@@ -367,6 +367,7 @@ export const KameloProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const deleteFormula = async (id: string): Promise<void> => {
     if (!formulas.some(row => row.id === id)) throw new Error('Only real records can be changed.');
     await deleteFormulaApi(id); setFormulas(prev => prev.filter(row => row.id !== id));
+    await fetchRealCatalogProducts();
     showToast('Registro eliminado.');
   };
   const duplicateFormula = async (id: string): Promise<void> => {

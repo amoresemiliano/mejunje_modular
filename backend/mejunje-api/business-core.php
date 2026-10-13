@@ -152,6 +152,24 @@ function businessSave(PDO $pdo, string $entity, array $input, ?string $id = null
 
 function businessDelete(PDO $pdo, string $entity, string $id): void {
     businessRealId($id, ['clients'=>'cli','formulas'=>'form','catalog_products'=>'prod'][$entity]);
+    if ($entity === 'formulas') {
+        $pdo->beginTransaction();
+        try {
+            $stmt = $pdo->prepare('SELECT id FROM formulas WHERE id = ? AND is_active = 1 FOR UPDATE');
+            $stmt->execute([$id]);
+            if (!$stmt->fetch()) throw new OutOfBoundsException('Record not found or inactive.');
+            // Keep variant prices and costs as the last commercial snapshot.
+            $pdo->prepare('UPDATE catalog_products SET formula_id = NULL, formula_name = NULL, updated_at = NOW() WHERE formula_id = ? AND is_active = 1')->execute([$id]);
+            $stmt = $pdo->prepare('UPDATE formulas SET is_active = 0, updated_at = NOW() WHERE id = ? AND is_active = 1');
+            $stmt->execute([$id]);
+            if (!$stmt->rowCount()) throw new OutOfBoundsException('Record not found or inactive.');
+            $pdo->commit();
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            throw $e;
+        }
+        return;
+    }
     $stmt = $pdo->prepare("UPDATE $entity SET is_active = 0 WHERE id = ? AND is_active = 1"); $stmt->execute([$id]);
     if (!$stmt->rowCount()) throw new OutOfBoundsException('Record not found or inactive.');
 }
