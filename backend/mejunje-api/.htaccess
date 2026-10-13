@@ -3,6 +3,9 @@
 
 <IfModule mod_rewrite.c>
     RewriteEngine On
+    RewriteRule ^clients/?$ clients.php [L,QSA]
+    RewriteRule ^formulas/?$ formulas.php [L,QSA]
+    RewriteRule ^catalog-products/?$ catalog-products.php [L,QSA]
     RewriteBase /sistemas/mejunje/dev/api/
 
     # Allow direct access to physical files or directories

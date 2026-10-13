@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
+import BusinessDataSource, { useBusinessMutation } from '@/components/BusinessDataSource';
+import BusinessEditor from '@/components/BusinessEditor';
 import { useKamelo } from '@/context/KameloContext';
 import { CatalogProduct, ProductVariant } from '@/types';
 import { formatCurrency } from '@/utils/formatters';
@@ -25,12 +27,18 @@ import {
 
 export default function CatalogoPage() {
   const {
-    catalogProducts,
+    catalogProducts: operationalData,
     deleteProduct,
     duplicateProduct,
     setActiveModal,
     showToast,
   } = useKamelo();
+  const { demoCatalogProducts, isCatalogProductsLoading, catalogProductsError, fetchRealCatalogProducts } = useKamelo();
+  const [demo, setDemo] = useState(false);
+  const catalogProducts = demo ? demoCatalogProducts : operationalData;
+  const { busy, run } = useBusinessMutation(showToast);
+  const [editingRecord, setEditingRecord] = useState<CatalogProduct | null>(null);
+
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('Todos');
@@ -106,6 +114,9 @@ export default function CatalogoPage() {
 
   return (
     <div className="space-y-10 animate-in fade-in pb-12 font-typewriter">
+      <BusinessDataSource demo={demo} onChange={value => { setDemo(value); setEditingRecord(null); }} loading={isCatalogProductsLoading} error={catalogProductsError} retry={fetchRealCatalogProducts} empty={operationalData.length === 0} />
+      {editingRecord && !demo && <BusinessEditor key={editingRecord.id} record={editingRecord} kind="product" close={() => setEditingRecord(null)} />}
+
       {/* Header Banner */}
       <SectionHero
         title="Catálogo & Fichas Olfativas"
@@ -116,7 +127,7 @@ export default function CatalogoPage() {
         noticeText="producción en lotes pequeños · diseño botánico de autor"
       >
         <button
-          onClick={() => setActiveModal('product')}
+          disabled={demo || busy} onClick={() => { if (!demo) setActiveModal('product'); }}
           className="px-4 py-2.5 btn-mejunje-primary text-xs rounded-xl flex items-center gap-1.5 shadow-xs shrink-0 active:scale-95"
         >
           <Plus className="w-4 h-4" /> Crear Nuevo Producto
@@ -184,7 +195,7 @@ export default function CatalogoPage() {
       {viewMode === 'grid' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredProducts.map((product) => {
-            const basePrice = product.variants?.[0]?.salePriceARS || 18500;
+            const basePrice = product.variants?.[0]?.salePriceARS ?? 0;
             const mainImg = getProductImage(product);
 
             return (
@@ -209,6 +220,7 @@ export default function CatalogoPage() {
                       </span>
 
                       <div className="flex items-center gap-1 bg-white/90 backdrop-blur-md px-2 py-1 rounded-full border border-mejunje-border shadow-xs">
+                        <button disabled={demo || busy} onClick={() => setEditingRecord(product)} className="p-1 text-xs">Editar</button>
                         <button
                           onClick={() => openProductDetail(product)}
                           title="Ver Ficha Detallada"
@@ -217,14 +229,14 @@ export default function CatalogoPage() {
                           <Eye className="w-3.5 h-3.5" />
                         </button>
                         <button
-                          onClick={() => duplicateProduct(product.id)}
+                          disabled={demo || busy} onClick={() => void run(() => duplicateProduct(product.id))}
                           title="Duplicar Producto"
                           className="p-1 text-mejunje-secundario hover:text-mejunje-verdeprofundo transition-colors"
                         >
                           <Copy className="w-3.5 h-3.5" />
                         </button>
                         <button
-                          onClick={() => setProductToDelete(product)}
+                          disabled={demo || busy} onClick={() => setProductToDelete(product)}
                           title="Eliminar Producto"
                           className="p-1 text-mejunje-secundario hover:text-mejunje-rojo transition-colors"
                         >
@@ -276,7 +288,7 @@ export default function CatalogoPage() {
                         <div className="space-y-1">
                           {product.variants.map((v) => (
                             <div key={v.id} className="flex items-center justify-between text-[11px] bg-mejunje-papel px-3 py-1.5 rounded-xl border border-mejunje-border">
-                              <span className="font-bold text-mejunje-carbon">{v.size} ({v.aroma})</span>
+                              <span className="font-bold text-mejunje-carbon">{v.size} ({v.aroma})<small className="block">Costo ARS {v.estimatedCostARS} · Recargo {v.marginPercent ?? 65}% · Sugerido ARS {v.suggestedSalePriceARS ?? "—"}</small></span>
                               <span className="font-bold text-mejunje-verdeprofundo">{formatCurrency(v.salePriceARS)}</span>
                             </div>
                           ))}
@@ -296,6 +308,7 @@ export default function CatalogoPage() {
                   </div>
 
                   <div className="flex items-center gap-2">
+                    <button disabled={demo || busy} onClick={() => setEditingRecord(product)} className="p-2 btn-mejunje-secondary rounded-xl">Editar</button>
                     <button
                       onClick={() => openProductDetail(product)}
                       className="px-3 py-1.5 btn-mejunje-secondary text-xs rounded-xl flex items-center gap-1"
@@ -323,7 +336,7 @@ export default function CatalogoPage() {
         /* =================================================================== */
         <div className="space-y-4">
           {filteredProducts.map((product) => {
-            const basePrice = product.variants?.[0]?.salePriceARS || 18500;
+            const basePrice = product.variants?.[0]?.salePriceARS ?? 0;
             const mainImg = getProductImage(product);
 
             return (
@@ -383,6 +396,7 @@ export default function CatalogoPage() {
                   </div>
 
                   <div className="flex items-center gap-1.5">
+                    <button disabled={demo || busy} onClick={() => setEditingRecord(product)} className="p-2 btn-mejunje-secondary rounded-xl">Editar</button>
                     <button
                       onClick={() => openProductDetail(product)}
                       className="p-2 btn-mejunje-secondary rounded-xl"
@@ -620,7 +634,7 @@ export default function CatalogoPage() {
         isOpen={!!productToDelete}
         title="Eliminar Producto"
         message={`¿Está seguro de eliminar el producto "${productToDelete?.name}" del catálogo?`}
-        onConfirm={() => productToDelete && deleteProduct(productToDelete.id)}
+        onConfirm={() => { if (productToDelete && !demo) void run(() => deleteProduct(productToDelete.id), () => setProductToDelete(null)); }}
         onCancel={() => setProductToDelete(null)}
       />
     </div>

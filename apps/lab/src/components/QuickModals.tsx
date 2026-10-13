@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { useBusinessMutation } from './BusinessDataSource';
 import { useKamelo } from '@/context/KameloContext';
 import {
   X,
@@ -27,9 +28,11 @@ export default function QuickModals() {
     suppliers,
     realSuppliers,
     realIngredients,
-    catalogProducts,
+    realFormulas,
     showToast,
   } = useKamelo();
+
+  const { busy, run } = useBusinessMutation(showToast);
 
   // ---------------------------------------------------------------------------
   // 1. CREAR FÓRMULA STATE
@@ -37,8 +40,8 @@ export default function QuickModals() {
   const [formulaForm, setFormulaForm] = useState({
     name: '',
     category: 'Vela' as 'Vela' | 'Difusor' | 'Perfume textil' | 'Otro',
-    associatedProductId: '',
     yieldSize: '200 g',
+    yieldUnits: 1,
     batchSizeGrams: 2000,
     status: 'Borrador' as 'Borrador' | 'En prueba' | 'Aprobada' | 'Archivada',
     version: 'v1',
@@ -67,6 +70,8 @@ export default function QuickModals() {
     variantSize: '200 g',
     variantPrice: 18500,
     variantCost: 5800,
+    formulaId: '',
+    marginPercent: 65,
     imageUrl: '',
   });
 
@@ -117,17 +122,19 @@ export default function QuickModals() {
   if (!activeModal) return null;
 
   // Handlers for Formula
-  const handleSaveFormula = (e: React.FormEvent) => {
+  const handleSaveFormula = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (busy) return;
     if (!formulaForm.name.trim()) {
       showToast('Por favor ingrese el nombre de la fórmula.', 'warning');
       return;
     }
 
+    if (!formulaForm.ingredients.length || formulaForm.ingredients.some(i => !realIngredients.some(real => real.id === i.ingredientId))) { showToast('Seleccione insumos reales activos.', 'error'); return; }
     const compiledIngs = formulaForm.ingredients.map((item) => {
-      const ingObj = ingredients.find((i) => i.id === item.ingredientId);
-      const name = ingObj ? ingObj.name : 'Insumo Base';
-      const unitCost = ingObj ? ingObj.unitCostARS : 10;
+      const ingObj = realIngredients.find((i) => i.id === item.ingredientId);
+      const name = ingObj?.name ?? '';
+      const unitCost = ingObj?.unitCostARS ?? 0;
       const cat = ingObj ? ingObj.category : 'Otros';
       const calcCost = item.quantity * unitCost;
 
@@ -145,14 +152,11 @@ export default function QuickModals() {
       };
     });
 
-    const assocProd = catalogProducts.find((p) => p.id === formulaForm.associatedProductId);
-
-    addFormula({
+    await run(() => addFormula({
       name: formulaForm.name,
       category: formulaForm.category,
-      associatedProductId: formulaForm.associatedProductId || undefined,
-      associatedProductName: assocProd ? assocProd.name : undefined,
       yieldSize: formulaForm.yieldSize,
+      yieldUnits: Number(formulaForm.yieldUnits),
       batchSizeGrams: Number(formulaForm.batchSizeGrams),
       status: formulaForm.status,
       version: formulaForm.version,
@@ -162,14 +166,13 @@ export default function QuickModals() {
       baseNotes: formulaForm.baseNotes ? formulaForm.baseNotes.split(',').map((s) => s.trim()) : [],
       suggestedMarginPercent: 65,
       ingredients: compiledIngs,
-    });
-
-    setActiveModal(null);
+    }), () => setActiveModal(null));
   };
 
   // Handlers for Product
-  const handleSaveProduct = (e: React.FormEvent) => {
+  const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (busy) return;
     if (!productForm.name.trim()) {
       showToast('Por favor ingrese el nombre del producto.', 'warning');
       return;
@@ -184,7 +187,8 @@ export default function QuickModals() {
 
     const finalImg = productForm.imageUrl.trim() || defaultCategoryImages[productForm.category] || defaultCategoryImages['Velas Botánicas'];
 
-    addProduct({
+    await run(() => addProduct({
+      formulaId: productForm.formulaId || undefined,
       sku: productForm.sku,
       name: productForm.name,
       category: productForm.category,
@@ -204,12 +208,11 @@ export default function QuickModals() {
           aroma: productForm.name,
           salePriceARS: Number(productForm.variantPrice),
           estimatedCostARS: Number(productForm.variantCost),
+          marginPercent: Number(productForm.marginPercent),
           status: 'Activo',
         },
       ],
-    });
-
-    setActiveModal(null);
+    }), () => setActiveModal(null));
   };
 
   // Handlers for PO
@@ -328,7 +331,7 @@ export default function QuickModals() {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 overflow-y-auto animate-in fade-in font-typewriter">
       <div className="bg-white text-mejunje-carbon border border-mejunje-border rounded-3xl max-w-2xl w-full p-6 sm:p-8 shadow-2xl relative my-8">
         <button
-          onClick={() => setActiveModal(null)}
+          disabled={busy} onClick={() => setActiveModal(null)}
           className="absolute top-5 right-5 text-mejunje-secundario hover:text-mejunje-carbon p-1.5 rounded-full bg-mejunje-papel border border-mejunje-border transition-colors"
         >
           <X className="w-5 h-5" />
@@ -349,7 +352,9 @@ export default function QuickModals() {
               </div>
             </div>
 
-            <form onSubmit={handleSaveFormula} className="space-y-4">
+            <form onSubmit={handleSaveFormula} className="space-y-4"><fieldset disabled={busy} className="space-y-4">
+              <label className="block text-xs">Unidades producidas por lote<input required type="number" min="0.0001" step="0.0001" value={formulaForm.yieldUnits} onChange={e => setFormulaForm({ ...formulaForm, yieldUnits: Number(e.target.value) })} className="w-full border rounded-xl p-2" /></label>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs uppercase text-mejunje-carbon font-bold mb-1">Nombre de la Fórmula *</label>
@@ -399,19 +404,7 @@ export default function QuickModals() {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs uppercase text-mejunje-carbon font-bold mb-1">Vincular a Pieza de Catálogo (Opcional)</label>
-                <select
-                  value={formulaForm.associatedProductId}
-                  onChange={(e) => setFormulaForm({ ...formulaForm, associatedProductId: e.target.value })}
-                  className="w-full bg-white border border-mejunje-border rounded-xl px-3.5 py-2 text-xs text-mejunje-carbon focus:outline-none focus:border-mejunje-verdeseco"
-                >
-                  <option value="">-- Sin producto vinculado por el momento --</option>
-                  {catalogProducts.map((p) => (
-                    <option key={p.id} value={p.id}>{p.name} ({p.sku})</option>
-                  ))}
-                </select>
-              </div>
+              <p className="text-xs text-mejunje-secundario">Vincule esta fórmula a un producto desde el catálogo.</p>
 
               {/* Dynamic Ingredients */}
               <div className="bg-mejunje-papel p-4 rounded-2xl border border-mejunje-border space-y-3">
@@ -443,7 +436,7 @@ export default function QuickModals() {
                       className="flex-1 bg-white border border-mejunje-border rounded-lg px-2.5 py-1.5 text-xs text-mejunje-carbon focus:outline-none focus:border-mejunje-verdeseco"
                     >
                       <option value="">-- Seleccionar Materia Prima --</option>
-                      {ingredients.map((i) => (
+                      {realIngredients.map((i) => (
                         <option key={i.id} value={i.id}>
                           {i.name} ({i.category}) - ${i.unitCostARS}/u
                         </option>
@@ -518,19 +511,19 @@ export default function QuickModals() {
               <div className="pt-4 flex items-center justify-end gap-3 border-t border-mejunje-border">
                 <button
                   type="button"
-                  onClick={() => setActiveModal(null)}
+                  disabled={busy} onClick={() => setActiveModal(null)}
                   className="px-4 py-2 btn-mejunje-secondary text-xs rounded-xl"
                 >
                   Cancelar
                 </button>
                 <button
-                  type="submit"
+                  disabled={busy} type="submit"
                   className="px-5 py-2 btn-mejunje-primary text-xs rounded-xl shadow-xs flex items-center gap-1.5"
                 >
                   <Sparkles className="w-4 h-4" /> Guardar Fórmula
                 </button>
               </div>
-            </form>
+            </fieldset></form>
           </div>
         )}
 
@@ -549,7 +542,11 @@ export default function QuickModals() {
               </div>
             </div>
 
-            <form onSubmit={handleSaveProduct} className="space-y-4">
+            <form onSubmit={handleSaveProduct} className="space-y-4"><fieldset disabled={busy} className="space-y-4">
+              <label className="block text-xs">Fórmula real<select value={productForm.formulaId} onChange={e => setProductForm({ ...productForm, formulaId: e.target.value })} className="w-full border rounded-xl p-2"><option value="">Sin fórmula</option>{realFormulas.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}</select></label>
+              <label className="block text-xs">Recargo objetivo %<input type="number" min="0" step="0.01" value={productForm.marginPercent} onChange={e => setProductForm({ ...productForm, marginPercent: Number(e.target.value) })} className="w-full border rounded-xl p-2" /></label>
+              <p className="text-xs">Costo unitario: ARS {realFormulas.find(f => f.id === productForm.formulaId)?.unitCostARS ?? productForm.variantCost} · Precio sugerido: ARS {((realFormulas.find(f => f.id === productForm.formulaId)?.unitCostARS ?? productForm.variantCost) * (1 + productForm.marginPercent/100)).toFixed(2)}. Se confirma al guardar. El precio aprobado es independiente.</p>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs uppercase text-mejunje-carbon font-bold mb-1">Nombre Comercial *</label>
@@ -633,7 +630,7 @@ export default function QuickModals() {
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] uppercase text-mejunje-secundario font-bold mb-1">Precio Venta (ARS)</label>
+                    <label className="block text-[10px] uppercase text-mejunje-secundario font-bold mb-1">Precio aprobado (ARS)</label>
                     <input
                       type="number"
                       value={productForm.variantPrice}
@@ -645,7 +642,7 @@ export default function QuickModals() {
                     <label className="block text-[10px] uppercase text-mejunje-secundario font-bold mb-1">Costo Estimado (ARS)</label>
                     <input
                       type="number"
-                      value={productForm.variantCost}
+                      disabled={!!productForm.formulaId} value={productForm.variantCost}
                       onChange={(e) => setProductForm({ ...productForm, variantCost: Number(e.target.value) })}
                       className="w-full bg-white border border-mejunje-border rounded-lg px-2.5 py-1.5 text-xs text-mejunje-carbon focus:outline-none"
                     />
@@ -656,19 +653,19 @@ export default function QuickModals() {
               <div className="pt-4 flex items-center justify-end gap-3 border-t border-mejunje-border">
                 <button
                   type="button"
-                  onClick={() => setActiveModal(null)}
+                  disabled={busy} onClick={() => setActiveModal(null)}
                   className="px-4 py-2 btn-mejunje-secondary text-xs rounded-xl"
                 >
                   Cancelar
                 </button>
                 <button
-                  type="submit"
+                  disabled={busy} type="submit"
                   className="px-5 py-2 btn-mejunje-primary text-xs rounded-xl shadow-xs flex items-center gap-1.5"
                 >
                   <Plus className="w-4 h-4" /> Crear Pieza
                 </button>
               </div>
-            </form>
+            </fieldset></form>
           </div>
         )}
 
@@ -996,7 +993,7 @@ export default function QuickModals() {
               <div className="pt-4 flex items-center justify-end gap-3 border-t border-mejunje-border">
                 <button
                   type="button"
-                  onClick={() => setActiveModal(null)}
+                  disabled={busy} onClick={() => setActiveModal(null)}
                   className="px-4 py-2 btn-mejunje-secondary text-xs rounded-xl"
                 >
                   Cancelar
@@ -1100,13 +1097,13 @@ export default function QuickModals() {
               <div className="pt-4 flex items-center justify-end gap-3 border-t border-mejunje-border">
                 <button
                   type="button"
-                  onClick={() => setActiveModal(null)}
+                  disabled={busy} onClick={() => setActiveModal(null)}
                   className="px-4 py-2 btn-mejunje-secondary text-xs rounded-xl"
                 >
                   Cancelar
                 </button>
                 <button
-                  type="submit"
+                  disabled={busy} type="submit"
                   className="px-5 py-2 btn-mejunje-primary text-xs rounded-xl shadow-xs flex items-center gap-1.5"
                 >
                   <TrendingUp className="w-4 h-4" /> Guardar Consulta
