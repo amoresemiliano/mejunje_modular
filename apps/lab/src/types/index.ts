@@ -135,6 +135,7 @@ export interface PurchaseOrder {
   totalARS: number;
   status: 'Borrador' | 'Pendiente' | 'Solicitada' | 'Confirmada' | 'Recibida' | 'Cancelada';
   observations?: string;
+  receivedAt?: string;
 }
 
 export interface ProductVariant {

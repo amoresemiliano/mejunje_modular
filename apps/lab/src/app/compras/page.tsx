@@ -28,24 +28,38 @@ import {
 export default function ComprasPage() {
   const {
     suppliers,
+    realSuppliers,
+    isSuppliersLoading,
+    suppliersError,
+    fetchRealSuppliers,
     requirements,
     purchaseOrders,
+    realPurchaseOrders,
+    demoPurchaseOrders,
+    isPurchaseOrdersLoading,
+    purchaseOrdersError,
+    fetchRealPurchaseOrders,
     createPurchaseOrderFromRequirements,
     updatePurchaseOrderStatus,
     deletePurchaseOrder,
     duplicatePurchaseOrder,
     deleteSupplier,
     setActiveModal,
+    showToast,
   } = useKamelo();
 
   // Sub-navigation tab: 'necesidades' | 'ordenes' | 'proveedores'
   const [activeTab, setActiveTab] = useState<'necesidades' | 'ordenes' | 'proveedores'>('necesidades');
+
+  // Purchase Order Data Mode: 'real' | 'demo'
+  const [poDataMode, setPoDataMode] = useState<'real' | 'demo'>('real');
 
   // Expanded supplier in requirements
   const [expandedSupplierId, setExpandedSupplierId] = useState<string | null>(requirements[0]?.supplierId || null);
 
   // Confirm dialogs
   const [poToDelete, setPoToDelete] = useState<PurchaseOrder | null>(null);
+  const [poToReceive, setPoToReceive] = useState<PurchaseOrder | null>(null);
   const [supplierToDelete, setSupplierToDelete] = useState<Supplier | null>(null);
 
   // Status badge style helper
@@ -97,7 +111,7 @@ export default function ComprasPage() {
                 : 'text-mejunje-secundario hover:text-mejunje-carbon'
             }`}
           >
-            Órdenes ({purchaseOrders.length})
+            Órdenes ({poDataMode === 'real' ? realPurchaseOrders.length : demoPurchaseOrders.length})
           </button>
 
           <button
@@ -108,7 +122,7 @@ export default function ComprasPage() {
                 : 'text-mejunje-secundario hover:text-mejunje-carbon'
             }`}
           >
-            Proveedores ({suppliers.length})
+            Proveedores ({realSuppliers.length})
           </button>
         </div>
       </SectionHero>
@@ -267,86 +281,193 @@ export default function ComprasPage() {
       {activeTab === 'ordenes' && (
         <div className="space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-mejunje-border shadow-xs">
-            <span className="text-xs text-mejunje-secundario">
-              Historial y seguimiento de Órdenes de Compra emitidas a proveedores de materias primas
-            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-mejunje-secundario font-bold uppercase mr-1">Fuente:</span>
+              <button
+                onClick={() => setPoDataMode('real')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  poDataMode === 'real'
+                    ? 'bg-mejunje-verdeprofundo text-white shadow-xs'
+                    : 'bg-mejunje-papel text-mejunje-secundario hover:text-mejunje-carbon border border-mejunje-border'
+                }`}
+              >
+                Datos Reales ({realPurchaseOrders.length})
+              </button>
+              <button
+                onClick={() => setPoDataMode('demo')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  poDataMode === 'demo'
+                    ? 'bg-mejunje-verdeprofundo text-white shadow-xs'
+                    : 'bg-mejunje-papel text-mejunje-secundario hover:text-mejunje-carbon border border-mejunje-border'
+                }`}
+              >
+                Ejemplos / Demostración ({demoPurchaseOrders.length})
+              </button>
+            </div>
 
-            <button
-              onClick={() => setActiveModal('purchaseOrder')}
-              className="px-4 py-2 btn-mejunje-primary text-xs rounded-xl flex items-center gap-1.5 shadow-xs"
-            >
-              <Plus className="w-4 h-4" /> Crear Orden de Compra
-            </button>
+            {poDataMode === 'real' && (
+              <button
+                onClick={() => setActiveModal('purchaseOrder')}
+                className="px-4 py-2 btn-mejunje-primary text-xs rounded-xl flex items-center gap-1.5 shadow-xs"
+              >
+                <Plus className="w-4 h-4" /> Nueva Orden Real
+              </button>
+            )}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {purchaseOrders.map((po) => (
-              <div key={po.id} className="atelier-sheet p-6 space-y-4 text-xs">
-                <div className="flex items-center justify-between border-b border-mejunje-border pb-3">
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-xs text-mejunje-carbon">{po.code}</span>
-                    <span className="text-[10px] text-mejunje-secundario">{po.date}</span>
-                  </div>
+          {/* Demo Mode Notice Banner */}
+          {poDataMode === 'demo' && (
+            <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center gap-3">
+              <AlertTriangle className="w-5 h-5 text-mejunje-ambar shrink-0" />
+              <span>
+                <strong>Modo Demostración:</strong> Las órdenes mostradas son ejemplos sintéticos de solo lectura. Para operar con MySQL, active la pestaña <strong>Datos Reales</strong>.
+              </span>
+            </div>
+          )}
 
-                  <select
-                    value={po.status}
-                    onChange={(e) => updatePurchaseOrderStatus(po.id, e.target.value as any)}
-                    className={`text-[10px] font-bold px-2.5 py-1 rounded-full border focus:outline-none ${getPOStatusBadge(
-                      po.status
-                    )}`}
-                  >
-                    <option value="Solicitada">Solicitada</option>
-                    <option value="Pendiente">Pendiente</option>
-                    <option value="Confirmada">Confirmada</option>
-                    <option value="Recibida">Recibida</option>
-                    <option value="Cancelada">Cancelada</option>
-                  </select>
-                </div>
+          {/* Real Mode Loading & Error States */}
+          {poDataMode === 'real' && isPurchaseOrdersLoading && (
+            <div className="p-12 text-center text-xs text-mejunje-secundario atelier-sheet">
+              Cargando órdenes de compra reales desde la API MySQL...
+            </div>
+          )}
 
-                <div>
-                  <h4 className="font-bold text-sm sm:text-base text-mejunje-carbon">{po.supplierName}</h4>
-                  {po.observations && <p className="text-mejunje-secundario text-[11px] mt-0.5">{po.observations}</p>}
-                </div>
-
-                {/* Items preview */}
-                <div className="bg-mejunje-papel p-3.5 rounded-2xl border border-mejunje-border space-y-1.5">
-                  <span className="text-[9px] uppercase tracking-wider text-mejunje-secundario font-bold">Ítems en Orden:</span>
-                  {po.items.map((item, idx) => (
-                    <div key={idx} className="flex items-center justify-between text-[11px]">
-                      <span className="text-mejunje-carbon font-bold">{item.ingredientName} ({item.requiredQty} {item.unit})</span>
-                      <span className="font-bold text-mejunje-verdeprofundo">{formatCurrency(item.subtotalARS)}</span>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="pt-2 flex items-center justify-between border-t border-mejunje-border">
-                  <div>
-                    <span className="text-[9px] uppercase text-mejunje-secundario font-bold">Total Orden:</span>
-                    <div className="text-base sm:text-lg text-mejunje-carbon font-bold">
-                      {formatCurrency(po.totalARS)}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      onClick={() => duplicatePurchaseOrder(po.id)}
-                      title="Duplicar Orden"
-                      className="p-1.5 btn-mejunje-secondary rounded-lg transition-colors"
-                    >
-                      <Copy className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => setPoToDelete(po)}
-                      title="Eliminar Orden"
-                      className="p-1.5 btn-mejunje-secondary text-mejunje-rojo hover:bg-rose-50 rounded-lg transition-colors"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
+          {poDataMode === 'real' && !isPurchaseOrdersLoading && purchaseOrdersError && (
+            <div className="p-6 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-mejunje-rojo shrink-0" />
+                <span>{purchaseOrdersError}</span>
               </div>
-            ))}
-          </div>
+              <button
+                onClick={fetchRealPurchaseOrders}
+                className="px-3 py-1.5 bg-rose-100 hover:bg-rose-200 text-mejunje-rojo font-bold rounded-lg border border-rose-300"
+              >
+                Reintentar
+              </button>
+            </div>
+          )}
+
+          {/* Real Mode Empty State */}
+          {poDataMode === 'real' && !isPurchaseOrdersLoading && !purchaseOrdersError && realPurchaseOrders.length === 0 && (
+            <div className="p-12 text-center space-y-3 atelier-sheet">
+              <ShoppingBag className="w-10 h-10 text-mejunje-secundario mx-auto opacity-50" />
+              <h3 className="font-bold text-sm text-mejunje-carbon">No hay órdenes de compra reales en MySQL</h3>
+              <p className="text-xs text-mejunje-secundario max-w-md mx-auto">
+                Haga clic en &quot;Nueva Orden Real&quot; para registrar la primera orden de compra asociada a un proveedor e insumos activos.
+              </p>
+              <button
+                onClick={() => setActiveModal('purchaseOrder')}
+                className="px-4 py-2 btn-mejunje-primary text-xs rounded-xl inline-flex items-center gap-1.5 shadow-xs"
+              >
+                <Plus className="w-4 h-4" /> Emitir Orden Real
+              </button>
+            </div>
+          )}
+
+          {/* Orders Cards Grid */}
+          {(!isPurchaseOrdersLoading || poDataMode === 'demo') && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {(poDataMode === 'real' ? realPurchaseOrders : demoPurchaseOrders).map((po) => (
+                <div key={po.id} className="atelier-sheet p-6 space-y-4 text-xs">
+                  <div className="flex items-center justify-between border-b border-mejunje-border pb-3">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-xs text-mejunje-carbon">{po.code}</span>
+                      <span className="text-[10px] text-mejunje-secundario">{po.date}</span>
+                    </div>
+
+                    <select
+                      disabled={poDataMode === 'demo' || po.status === 'Recibida'}
+                      value={po.status}
+                      onChange={(e) => {
+                        const newStatus = e.target.value as PurchaseOrder['status'];
+                        if (poDataMode === 'demo') {
+                          showToast('Las órdenes de demostración son de solo lectura.', 'warning');
+                          return;
+                        }
+                        if (po.status === 'Recibida') {
+                          showToast('Una orden ya recibida no se puede modificar.', 'warning');
+                          return;
+                        }
+                        if (newStatus === 'Recibida') {
+                          setPoToReceive(po);
+                        } else {
+                          updatePurchaseOrderStatus(po.id, newStatus);
+                        }
+                      }}
+                      className={`text-[10px] font-bold px-2.5 py-1 rounded-full border focus:outline-none ${getPOStatusBadge(
+                        po.status
+                      )} ${po.status === 'Recibida' || poDataMode === 'demo' ? 'cursor-not-allowed opacity-90' : ''}`}
+                    >
+                      <option value="Borrador">Borrador</option>
+                      <option value="Pendiente">Pendiente</option>
+                      <option value="Solicitada">Solicitada</option>
+                      <option value="Confirmada">Confirmada</option>
+                      <option value="Recibida">Recibida</option>
+                      <option value="Cancelada">Cancelada</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <h4 className="font-bold text-sm sm:text-base text-mejunje-carbon">{po.supplierName}</h4>
+                    {po.observations && <p className="text-mejunje-secundario text-[11px] mt-0.5">{po.observations}</p>}
+                    {po.receivedAt && (
+                      <p className="text-[10px] text-emerald-700 font-bold mt-1">
+                        Recibida el: {new Date(po.receivedAt).toLocaleString('es-AR')}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Items preview */}
+                  <div className="bg-mejunje-papel p-3.5 rounded-2xl border border-mejunje-border space-y-1.5">
+                    <span className="text-[9px] uppercase tracking-wider text-mejunje-secundario font-bold">Ítems en Orden:</span>
+                    {po.items.map((item, idx) => (
+                      <div key={idx} className="flex items-center justify-between text-[11px]">
+                        <span className="text-mejunje-carbon font-bold">{item.ingredientName} ({item.requiredQty} {item.unit})</span>
+                        <span className="font-bold text-mejunje-verdeprofundo">{formatCurrency(item.subtotalARS)}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="pt-2 flex items-center justify-between border-t border-mejunje-border">
+                    <div>
+                      <span className="text-[9px] uppercase text-mejunje-secundario font-bold">Total Orden:</span>
+                      <div className="text-base sm:text-lg text-mejunje-carbon font-bold">
+                        {formatCurrency(po.totalARS)}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => duplicatePurchaseOrder(po.id)}
+                        title="Duplicar Orden"
+                        className="p-1.5 btn-mejunje-secondary rounded-lg transition-colors"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        disabled={poDataMode === 'demo' || po.status === 'Recibida'}
+                        onClick={() => {
+                          if (poDataMode === 'demo') {
+                            showToast('Las órdenes de demostración son de solo lectura.', 'warning');
+                            return;
+                          }
+                          if (po.status === 'Recibida') {
+                            showToast('No se puede eliminar una orden que ya fue recibida.', 'warning');
+                            return;
+                          }
+                          setPoToDelete(po);
+                        }}
+                        title={po.status === 'Recibida' ? 'Orden recibida (no eliminable)' : 'Eliminar Orden'}
+                        className="p-1.5 btn-mejunje-secondary text-mejunje-rojo hover:bg-rose-50 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -444,6 +565,21 @@ export default function ComprasPage() {
       )}
 
       {/* Confirm Dialogs */}
+      <ConfirmDialog
+        isOpen={!!poToReceive}
+        title="Marcar Orden como Recibida"
+        message={`Al marcar esta orden (${poToReceive?.code}) como recibida, las cantidades se sumarán automáticamente al stock real de los insumos en MySQL. Esta operación no se debe ejecutar dos veces.`}
+        confirmLabel="Confirmar Recepción & Incrementar Stock"
+        cancelLabel="Cancelar"
+        onConfirm={() => {
+          if (poToReceive) {
+            updatePurchaseOrderStatus(poToReceive.id, 'Recibida');
+            setPoToReceive(null);
+          }
+        }}
+        onCancel={() => setPoToReceive(null)}
+      />
+
       <ConfirmDialog
         isOpen={!!poToDelete}
         title="Eliminar Orden de Compra"

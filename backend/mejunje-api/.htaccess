@@ -20,6 +20,10 @@
     # Ingredients routes
     RewriteRule ^ingredients/?$ ingredients.php [L,QSA]
     RewriteRule ^ingredients/([^/]+)/?$ ingredients.php?id=$1 [L,QSA]
+
+    # Purchase Orders routes
+    RewriteRule ^purchase-orders/?$ purchase-orders.php [L,QSA]
+    RewriteRule ^purchase-orders/([^/]+)/?$ purchase-orders.php?id=$1 [L,QSA]
 </IfModule>
 
 # Disable directory browsing
