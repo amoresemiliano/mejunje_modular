@@ -49,10 +49,28 @@ import {
   deletePurchaseOrderApi,
   CreatePurchaseOrderInput,
   UpdatePurchaseOrderInput,
+  getClientsApi, createClientApi, updateClientApi, deleteClientApi,
+  getFormulasApi, createFormulaApi, updateFormulaApi, deleteFormulaApi,
+  getCatalogProductsApi, createProductApi, updateProductApi, deleteProductApi,
 } from '@/services/api';
 
 interface KameloContextType {
   // State
+  realClients: ClientContact[];
+  demoClients: ClientContact[];
+  isClientsLoading: boolean;
+  clientsError: string | null;
+  fetchRealClients: () => Promise<void>;
+  realFormulas: Formula[];
+  demoFormulas: Formula[];
+  isFormulasLoading: boolean;
+  formulasError: string | null;
+  fetchRealFormulas: () => Promise<void>;
+  realCatalogProducts: CatalogProduct[];
+  demoCatalogProducts: CatalogProduct[];
+  isCatalogProductsLoading: boolean;
+  catalogProductsError: string | null;
+  fetchRealCatalogProducts: () => Promise<void>;
   formulas: Formula[];
   ingredients: Ingredient[];
   suppliers: Supplier[];
@@ -91,16 +109,16 @@ interface KameloContextType {
   fetchRealPurchaseOrders: () => Promise<void>;
 
   // Formulas CRUD
-  addFormula: (formula: Omit<Formula, 'id'>) => Formula;
-  updateFormula: (id: string, formula: Partial<Formula>) => void;
-  deleteFormula: (id: string) => void;
-  duplicateFormula: (id: string) => void;
+  addFormula: (formula: Omit<Formula, 'id'>) => Promise<Formula>;
+  updateFormula: (id: string, formula: Partial<Formula>) => Promise<void>;
+  deleteFormula: (id: string) => Promise<void>;
+  duplicateFormula: (id: string) => Promise<void>;
 
   // Clients CRUD
-  addClient: (client: Omit<ClientContact, 'id'>) => ClientContact;
-  updateClient: (id: string, client: Partial<ClientContact>) => void;
-  deleteClient: (id: string) => void;
-  duplicateClient: (id: string) => void;
+  addClient: (client: Omit<ClientContact, 'id'>) => Promise<ClientContact>;
+  updateClient: (id: string, client: Partial<ClientContact>) => Promise<void>;
+  deleteClient: (id: string) => Promise<void>;
+  duplicateClient: (id: string) => Promise<void>;
 
   // Insumos CRUD (API-backed)
   addIngredient: (ingredient: CreateIngredientInput) => Promise<Ingredient>;
@@ -127,16 +145,16 @@ interface KameloContextType {
   addBatchTest: (batch: Omit<BatchTest, 'id' | 'code'>) => BatchTest;
   updateBatchTest: (id: string, batch: Partial<BatchTest>) => void;
   deleteBatchTest: (id: string) => void;
-  approveBatchFormula: (batchId: string, formulaId: string) => void;
+  approveBatchFormula: (batchId: string, formulaId: string) => Promise<void>;
 
   // Catalog & Products
-  addProduct: (product: Omit<CatalogProduct, 'id'>) => CatalogProduct;
-  updateProduct: (id: string, product: Partial<CatalogProduct>) => void;
-  deleteProduct: (id: string) => void;
-  duplicateProduct: (id: string) => void;
-  addVariantToProduct: (productId: string, variant: Omit<ProductVariant, 'id'>) => void;
-  updateVariant: (productId: string, variantId: string, variant: Partial<ProductVariant>) => void;
-  deleteVariant: (productId: string, variantId: string) => void;
+  addProduct: (product: Omit<CatalogProduct, 'id'>) => Promise<CatalogProduct>;
+  updateProduct: (id: string, product: Partial<CatalogProduct>) => Promise<void>;
+  deleteProduct: (id: string) => Promise<void>;
+  duplicateProduct: (id: string) => Promise<void>;
+  addVariantToProduct: (productId: string, variant: Omit<ProductVariant, 'id'>) => Promise<void>;
+  updateVariant: (productId: string, variantId: string, variant: Partial<ProductVariant>) => Promise<void>;
+  deleteVariant: (productId: string, variantId: string) => Promise<void>;
 
   // Market Queries & Benchmarks
   addMarketQuery: (query: Omit<MarketQuery, 'id'>) => MarketQuery;
@@ -154,7 +172,7 @@ const KameloContext = createContext<KameloContextType | undefined>(undefined);
 const LOCAL_STORAGE_KEY = 'kamelo_v2_app_state';
 
 export const KameloProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [formulas, setFormulas] = useState<Formula[]>(mockFormulas);
+  const [formulas, setFormulas] = useState<Formula[]>([]);
   const [demoIngredients] = useState<Ingredient[]>(mockIngredients);
   const [demoSuppliers] = useState<Supplier[]>(mockSuppliers);
 
@@ -172,13 +190,45 @@ export const KameloProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const [requirements, setRequirements] = useState<SupplierRequirementGroup[]>(mockSupplierGroups);
   const [batchTests, setBatchTests] = useState<BatchTest[]>(mockBatchTests);
-  const [catalogProducts, setCatalogProducts] = useState<CatalogProduct[]>(mockCatalogProducts);
+  const [catalogProducts, setCatalogProducts] = useState<CatalogProduct[]>([]);
   const [marketQueries, setMarketQueries] = useState<MarketQuery[]>(mockMarketQueries);
   const [marketBenchmarks, setMarketBenchmarks] = useState<MarketBenchmark[]>(mockMarketBenchmarks);
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>(mockActivityLogs);
   const [toasts, setToasts] = useState<ToastNotification[]>([]);
-  const [clients, setClients] = useState<ClientContact[]>(mockClients);
+  const [clients, setClients] = useState<ClientContact[]>([]);
   const [activeModal, setActiveModal] = useState<string | null>(null);
+
+  const demoClients = mockClients;
+  const realClients = clients;
+  const [isClientsLoading, setIsClientsLoading] = useState(true);
+  const [clientsError, setClientsError] = useState<string | null>(null);
+  const demoFormulas = mockFormulas;
+  const realFormulas = formulas;
+  const [isFormulasLoading, setIsFormulasLoading] = useState(true);
+  const [formulasError, setFormulasError] = useState<string | null>(null);
+  const demoCatalogProducts = mockCatalogProducts;
+  const realCatalogProducts = catalogProducts;
+  const [isCatalogProductsLoading, setIsCatalogProductsLoading] = useState(true);
+  const [catalogProductsError, setCatalogProductsError] = useState<string | null>(null);
+
+  const fetchRealClients = async () => {
+    setIsClientsLoading(true); setClientsError(null);
+    try { setClients(await getClientsApi()); }
+    catch (error) { setClientsError(error instanceof Error ? error.message : 'Unable to load records.'); }
+    finally { setIsClientsLoading(false); }
+  };
+  const fetchRealFormulas = async () => {
+    setIsFormulasLoading(true); setFormulasError(null);
+    try { setFormulas(await getFormulasApi()); }
+    catch (error) { setFormulasError(error instanceof Error ? error.message : 'Unable to load records.'); }
+    finally { setIsFormulasLoading(false); }
+  };
+  const fetchRealCatalogProducts = async () => {
+    setIsCatalogProductsLoading(true); setCatalogProductsError(null);
+    try { setCatalogProducts(await getCatalogProductsApi()); }
+    catch (error) { setCatalogProductsError(error instanceof Error ? error.message : 'Unable to load records.'); }
+    finally { setIsCatalogProductsLoading(false); }
+  };
 
   // Fetch Suppliers from PHP REST API
   const fetchRealSuppliers = async () => {
@@ -227,58 +277,52 @@ export const KameloProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   // Initial API Load
   useEffect(() => {
+    fetchRealClients();
+    fetchRealFormulas();
+    fetchRealCatalogProducts();
     fetchRealSuppliers();
     fetchRealIngredients();
     fetchRealPurchaseOrders();
   }, []);
 
-  // Hydrate from localStorage on initial load (EXCLUDES suppliers, ingredients & purchase orders as real source of truth)
+  // Only temporary local modules hydrate; business records come from the API.
   useEffect(() => {
     try {
       const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed.formulas) setFormulas(parsed.formulas);
-        // Note: localStorage suppliers, ingredients & purchase orders are ignored for real operational state
+        // Ignore legacy business data without importing it or deleting the storage key.
         if (parsed.requirements) setRequirements(parsed.requirements);
         if (parsed.batchTests) setBatchTests(parsed.batchTests);
-        if (parsed.catalogProducts) setCatalogProducts(parsed.catalogProducts);
         if (parsed.marketQueries) setMarketQueries(parsed.marketQueries);
         if (parsed.marketBenchmarks) setMarketBenchmarks(parsed.marketBenchmarks);
         if (parsed.activityLogs) setActivityLogs(parsed.activityLogs);
-        if (parsed.clients) setClients(parsed.clients);
       }
     } catch (e) {
       console.error('Failed to load local storage state', e);
     }
   }, []);
 
-  // Save to localStorage on changes (EXCLUDES suppliers, ingredients and purchase orders)
+  // Persist only the five temporary local modules.
   useEffect(() => {
     try {
       const stateToSave = {
-        formulas,
         requirements,
         batchTests,
-        catalogProducts,
         marketQueries,
         marketBenchmarks,
         activityLogs,
-        clients,
       };
       localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(stateToSave));
     } catch (e) {
       console.error('Failed to save state to local storage', e);
     }
   }, [
-    formulas,
     requirements,
     batchTests,
-    catalogProducts,
     marketQueries,
     marketBenchmarks,
     activityLogs,
-    clients,
   ]);
 
   // Toast Helper
@@ -309,86 +353,49 @@ export const KameloProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // ---------------------------------------------------------------------------
   // FORMULAS CRUD
   // ---------------------------------------------------------------------------
-  const addFormula = (formulaData: Omit<Formula, 'id'>): Formula => {
-    const newId = `form-${Date.now()}`;
-    const newFormula: Formula = { ...formulaData, id: newId };
-    setFormulas((prev) => [newFormula, ...prev]);
-    addActivityLog('Fórmula Creada', `Nueva fórmula "${newFormula.name}" (${newFormula.category}) registrada.`, 'formula');
-    showToast(`Fórmula "${newFormula.name}" creada exitosamente.`);
-    return newFormula;
+  const addFormula = async (data: Omit<Formula, 'id'>): Promise<Formula> => {
+    const created = await createFormulaApi(data);
+    setFormulas(prev => [created, ...prev]); showToast('Registro guardado.');
+    return created;
+  };
+  const updateFormula = async (id: string, data: Partial<Formula>): Promise<void> => {
+    if (!formulas.some(row => row.id === id)) throw new Error('Only real records can be changed.');
+    const updated = await updateFormulaApi(id, data);
+    setFormulas(prev => prev.map(row => row.id === id ? updated : row)); showToast('Cambios guardados.');
+    await fetchRealCatalogProducts();
+  };
+  const deleteFormula = async (id: string): Promise<void> => {
+    if (!formulas.some(row => row.id === id)) throw new Error('Only real records can be changed.');
+    await deleteFormulaApi(id); setFormulas(prev => prev.filter(row => row.id !== id));
+    showToast('Registro eliminado.');
+  };
+  const duplicateFormula = async (id: string): Promise<void> => {
+    const target = formulas.find(row => row.id === id);
+    if (!target) throw new Error('Only real records can be duplicated.');
+    const { id: ignored, ...data } = target;
+    await addFormula({ ...data, name: `${target.name} (Copia)` });
   };
 
-  const updateFormula = (id: string, partial: Partial<Formula>) => {
-    setFormulas((prev) =>
-      prev.map((f) => (f.id === id ? { ...f, ...partial } : f))
-    );
-    addActivityLog('Fórmula Actualizada', `Se guardaron los cambios en la fórmula.`, 'formula');
-    showToast('Fórmula actualizada correctamente.');
+  const addClient = async (data: Omit<ClientContact, 'id'>): Promise<ClientContact> => {
+    const created = await createClientApi(data);
+    setClients(prev => [created, ...prev]); showToast('Registro guardado.');
+    return created;
   };
-
-  const deleteFormula = (id: string) => {
-    const target = formulas.find((f) => f.id === id);
-    setFormulas((prev) => prev.filter((f) => f.id !== id));
-    if (target) {
-      addActivityLog('Fórmula Eliminada', `Fórmula "${target.name}" fue eliminada.`, 'formula');
-      showToast(`Fórmula "${target.name}" eliminada.`, 'info');
-    }
+  const updateClient = async (id: string, data: Partial<ClientContact>): Promise<void> => {
+    if (!clients.some(row => row.id === id)) throw new Error('Only real records can be changed.');
+    const updated = await updateClientApi(id, data);
+    setClients(prev => prev.map(row => row.id === id ? updated : row)); showToast('Cambios guardados.');
   };
-
-  const duplicateFormula = (id: string) => {
-    const target = formulas.find((f) => f.id === id);
-    if (!target) return;
-    const duplicated: Formula = {
-      ...target,
-      id: `form-${Date.now()}`,
-      name: `${target.name} (Copia)`,
-      version: `${target.version}.1`,
-      status: 'Borrador',
-    };
-    setFormulas((prev) => [duplicated, ...prev]);
-    addActivityLog('Fórmula Duplicada', `Copia generada: "${duplicated.name}".`, 'formula');
-    showToast(`Fórmula duplicada como "${duplicated.name}".`);
+  const deleteClient = async (id: string): Promise<void> => {
+    if (!clients.some(row => row.id === id)) throw new Error('Only real records can be changed.');
+    await deleteClientApi(id); setClients(prev => prev.filter(row => row.id !== id));
+    showToast('Registro eliminado.');
   };
-
-  // ---------------------------------------------------------------------------
-  // CLIENTS CRUD
-  // ---------------------------------------------------------------------------
-  const addClient = (clientData: Omit<ClientContact, 'id'>): ClientContact => {
-    const newId = `cli-${Date.now()}`;
-    const newClient: ClientContact = { ...clientData, id: newId, status: clientData.status || 'Activo' };
-    setClients((prev) => [newClient, ...prev]);
-    addActivityLog('Cliente Registrado', `Nuevo cliente "${newClient.name}" (${newClient.type}) añadido al registro.`, 'client');
-    showToast(`Cliente "${newClient.name}" registrado.`);
-    return newClient;
-  };
-
-  const updateClient = (id: string, partial: Partial<ClientContact>) => {
-    setClients((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, ...partial } : c))
-    );
-    addActivityLog('Cliente Actualizado', `Datos de contacto actualizados.`, 'client');
-    showToast('Cliente actualizado correctamente.');
-  };
-
-  const deleteClient = (id: string) => {
-    const target = clients.find((c) => c.id === id);
-    setClients((prev) => prev.filter((c) => c.id !== id));
-    if (target) {
-      addActivityLog('Cliente Eliminado', `Cliente "${target.name}" removido.`, 'client');
-      showToast(`Cliente "${target.name}" eliminado.`, 'info');
-    }
-  };
-
-  const duplicateClient = (id: string) => {
-    const target = clients.find((c) => c.id === id);
-    if (!target) return;
-    const duplicated: ClientContact = {
-      ...target,
-      id: `cli-${Date.now()}`,
-      name: `${target.name} (Copia)`,
-    };
-    setClients((prev) => [duplicated, ...prev]);
-    showToast(`Cliente duplicado como "${duplicated.name}".`);
+  const duplicateClient = async (id: string): Promise<void> => {
+    const target = clients.find(row => row.id === id);
+    if (!target) throw new Error('Only real records can be duplicated.');
+    const { id: ignored, ...data } = target;
+    await addClient({ ...data, name: `${target.name} (Copia)` });
   };
 
   // ---------------------------------------------------------------------------
@@ -671,12 +678,10 @@ export const KameloProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   };
 
-  const approveBatchFormula = (batchId: string, formulaId: string) => {
+  const approveBatchFormula = async (batchId: string, formulaId: string) => {
+    await updateFormula(formulaId, { status: 'Aprobada' });
     setBatchTests((prev) =>
       prev.map((b) => (b.id === batchId ? { ...b, status: 'Aprobada' } : b))
-    );
-    setFormulas((prev) =>
-      prev.map((f) => (f.id === formulaId ? { ...f, status: 'Aprobada' } : f))
     );
     addActivityLog('Fórmula Aprobada en Laboratorio', `Fórmula de batch marcada como Aprobada.`, 'batch');
     showToast(`Fórmula aprobada oficialmente desde laboratorio.`);
@@ -685,110 +690,41 @@ export const KameloProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // ---------------------------------------------------------------------------
   // PRODUCTS & CATALOG
   // ---------------------------------------------------------------------------
-  const addProduct = (productData: Omit<CatalogProduct, 'id'>): CatalogProduct => {
-    const newId = `prod-${Date.now()}`;
-    const newProduct: CatalogProduct = { ...productData, id: newId };
-    setCatalogProducts((prev) => [newProduct, ...prev]);
-
-    // Create a market benchmark automatically for this product
-    if (newProduct.variants && newProduct.variants.length > 0) {
-      const v = newProduct.variants[0];
-      setMarketBenchmarks((prev) => [
-        ...prev,
-        {
-          id: `bench-${Date.now()}`,
-          productName: `${newProduct.name} ${v.size}`,
-          category: newProduct.category,
-          kameloPriceARS: v.salePriceARS,
-          competitorAverageARS: Math.round(v.salePriceARS * 1.08),
-          competitorMinARS: Math.round(v.salePriceARS * 0.88),
-          competitorMaxARS: Math.round(v.salePriceARS * 1.25),
-          kameloMarginPercent: Math.round(((v.salePriceARS - v.estimatedCostARS) / v.salePriceARS) * 100),
-          lastUpdated: new Date().toLocaleDateString('es-AR'),
-          status: 'Competitivo',
-        },
-      ]);
-    }
-
-    addActivityLog('Producto Creado', `Nuevo producto "${newProduct.name}" agregado al catálogo.`, 'catalog');
-    showToast(`Producto "${newProduct.name}" creado en catálogo.`);
-    return newProduct;
+  const addProduct = async (data: Omit<CatalogProduct, 'id'>): Promise<CatalogProduct> => {
+    const created = await createProductApi(data);
+    setCatalogProducts(prev => [created, ...prev]); showToast('Registro guardado.');
+    return created;
   };
-
-  const updateProduct = (id: string, partial: Partial<CatalogProduct>) => {
-    setCatalogProducts((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, ...partial } : p))
-    );
-    addActivityLog('Producto Actualizado', `Ficha de producto modificada.`, 'catalog');
-    showToast('Producto actualizado.');
+  const updateProduct = async (id: string, data: Partial<CatalogProduct>): Promise<void> => {
+    if (!catalogProducts.some(row => row.id === id)) throw new Error('Only real records can be changed.');
+    const updated = await updateProductApi(id, data);
+    setCatalogProducts(prev => prev.map(row => row.id === id ? updated : row)); showToast('Cambios guardados.');
   };
-
-  const deleteProduct = (id: string) => {
-    const target = catalogProducts.find((p) => p.id === id);
-    setCatalogProducts((prev) => prev.filter((p) => p.id !== id));
-    if (target) {
-      addActivityLog('Producto Eliminado', `Producto "${target.name}" removido de catálogo.`, 'catalog');
-      showToast(`Producto "${target.name}" eliminado.`, 'info');
-    }
+  const deleteProduct = async (id: string): Promise<void> => {
+    if (!catalogProducts.some(row => row.id === id)) throw new Error('Only real records can be changed.');
+    await deleteProductApi(id); setCatalogProducts(prev => prev.filter(row => row.id !== id));
+    showToast('Registro eliminado.');
   };
-
-  const duplicateProduct = (id: string) => {
-    const target = catalogProducts.find((p) => p.id === id);
-    if (!target) return;
-    const duplicated: CatalogProduct = {
-      ...target,
-      id: `prod-${Date.now()}`,
-      sku: `${target.sku}-COPY`,
-      name: `${target.name} (Copia)`,
-      status: 'Borrador',
-    };
-    setCatalogProducts((prev) => [duplicated, ...prev]);
-    addActivityLog('Producto Duplicado', `Copia realizada: "${duplicated.name}".`, 'catalog');
-    showToast(`Producto duplicado como "${duplicated.name}".`);
+  const duplicateProduct = async (id: string): Promise<void> => {
+    const target = catalogProducts.find(row => row.id === id);
+    if (!target) throw new Error('Only real records can be duplicated.');
+    const { id: ignored, ...data } = target;
+    await addProduct({ ...data, name: `${target.name} (Copia)`, sku: `${target.sku}-COPY-${Date.now()}`, variants: target.variants.map(v => ({ ...v, sku: `${v.sku}-COPY-${Date.now()}` })) });
   };
-
-  const addVariantToProduct = (productId: string, variantData: Omit<ProductVariant, 'id'>) => {
-    const newVariantId = `var-${Date.now()}`;
-    const newVariant: ProductVariant = { ...variantData, id: newVariantId };
-    setCatalogProducts((prev) =>
-      prev.map((p) => {
-        if (p.id === productId) {
-          return { ...p, variants: [...p.variants, newVariant] };
-        }
-        return p;
-      })
-    );
-    showToast(`Variante ${newVariant.size} agregada.`);
+  const addVariantToProduct = async (productId: string, data: Omit<ProductVariant, 'id'>) => {
+    const product = catalogProducts.find(p => p.id === productId);
+    if (!product) throw new Error('Real product required.');
+    await updateProduct(productId, { variants: [...product.variants, { ...data, id: '' }] });
   };
-
-  const updateVariant = (productId: string, variantId: string, partial: Partial<ProductVariant>) => {
-    setCatalogProducts((prev) =>
-      prev.map((p) => {
-        if (p.id === productId) {
-          return {
-            ...p,
-            variants: p.variants.map((v) => (v.id === variantId ? { ...v, ...partial } : v)),
-          };
-        }
-        return p;
-      })
-    );
-    showToast('Variante actualizada.');
+  const updateVariant = async (productId: string, variantId: string, data: Partial<ProductVariant>) => {
+    const product = catalogProducts.find(p => p.id === productId);
+    if (!product) throw new Error('Real product required.');
+    await updateProduct(productId, { variants: product.variants.map(v => v.id === variantId ? { ...v, ...data } : v) });
   };
-
-  const deleteVariant = (productId: string, variantId: string) => {
-    setCatalogProducts((prev) =>
-      prev.map((p) => {
-        if (p.id === productId) {
-          return {
-            ...p,
-            variants: p.variants.filter((v) => v.id !== variantId),
-          };
-        }
-        return p;
-      })
-    );
-    showToast('Variante eliminada.', 'info');
+  const deleteVariant = async (productId: string, variantId: string) => {
+    const product = catalogProducts.find(p => p.id === productId);
+    if (!product) throw new Error('Real product required.');
+    await updateProduct(productId, { variants: product.variants.filter(v => v.id !== variantId) });
   };
 
   // ---------------------------------------------------------------------------
@@ -887,6 +823,10 @@ export const KameloProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     <KameloContext.Provider
       value={{
         formulas,
+        realClients, demoClients, isClientsLoading, clientsError, fetchRealClients,
+        realFormulas, demoFormulas, isFormulasLoading, formulasError, fetchRealFormulas,
+        realCatalogProducts, demoCatalogProducts, isCatalogProductsLoading, catalogProductsError, fetchRealCatalogProducts,
+
         ingredients: realIngredients,
         suppliers: realSuppliers,
         demoSuppliers,

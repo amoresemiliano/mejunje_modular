@@ -1,4 +1,48 @@
 <?php
+/** Core business validation throws before any parent or child write. */
+function businessRealId($id, string $prefix): void {
+    if (!is_string($id) || !preg_match('/^' . preg_quote($prefix, '/') . '-[a-f0-9]{16}$/D', $id)) throw new InvalidArgumentException('A real server-generated ID is required.');
+}
+function businessNumber($value, string $field, bool $positive = false): float {
+    if (!is_numeric($value) || !is_finite((float)$value) || ($positive ? (float)$value <= 0 : (float)$value < 0) || (float)$value >= 10000000000) throw new InvalidArgumentException("Invalid numeric field: $field.");
+    $rounded = round((float)$value, 4);
+    if ($positive && $rounded <= 0) throw new InvalidArgumentException("Field $field is below the supported precision.");
+    return $rounded;
+}
+function businessRequired(array $data, array $fields): void {
+    foreach ($fields as $field => $max) {
+        if (!isset($data[$field]) || !is_string($data[$field]) || trim($data[$field]) === '' || strlen($data[$field]) > $max) throw new InvalidArgumentException("Invalid required field: $field.");
+    }
+}
+function validateBusinessInput(string $entity, array $data): void {
+    businessRequired($data, ['name'=>255]);
+    if ($entity === 'clients') {
+        businessRequired($data, ['phone'=>64,'type'=>64]);
+        if (!empty($data['email']) && (!is_string($data['email']) || strlen($data['email']) > 255 || !filter_var($data['email'], FILTER_VALIDATE_EMAIL))) throw new InvalidArgumentException('Invalid email.');
+        if (!empty($data['lastOrderDate'])) {
+            $date = is_string($data['lastOrderDate']) ? DateTime::createFromFormat('!Y-m-d',$data['lastOrderDate']) : false;
+            if (!$date || $date->format('Y-m-d') !== $data['lastOrderDate']) throw new InvalidArgumentException('Invalid last order date.');
+        }
+        if (isset($data['status']) && !in_array($data['status'], ['Activo','Inactivo','Potencial'],true)) throw new InvalidArgumentException('Invalid client status.');
+    } elseif ($entity === 'formulas') {
+        businessRequired($data,['category'=>64,'yieldSize'=>128,'status'=>32,'version'=>64]);
+        if (!in_array($data['status'],['Borrador','En prueba','Aprobada','Archivada'],true)) throw new InvalidArgumentException('Invalid formula status.');
+        businessNumber($data['yieldUnits'] ?? 1,'yieldUnits',true);
+        businessNumber($data['batchSizeGrams'] ?? null,'batchSizeGrams',true);
+        if (businessNumber($data['suggestedMarginPercent'] ?? 65,'suggestedMarginPercent') > 999999) throw new InvalidArgumentException('Suggested markup is out of range.');
+        foreach (['topNotes','heartNotes','baseNotes'] as $key) if (isset($data[$key]) && (!is_array($data[$key]) || count(array_filter($data[$key], 'is_string')) !== count($data[$key]))) throw new InvalidArgumentException('Notes must be arrays of strings.');
+        foreach (['processMaxMeltingTemp','processFragranceTemp','processPouringTemp','processCuringDays'] as $key) if (isset($data[$key])) businessNumber($data[$key],$key);
+        if (isset($data['processCuringDays']) && ((float)$data['processCuringDays'] != (int)$data['processCuringDays'] || (float)$data['processCuringDays'] > 2147483647)) throw new InvalidArgumentException('Curing days must be an integer.');
+        if (!isset($data['ingredients']) || !is_array($data['ingredients'])) throw new InvalidArgumentException('Ingredients are required.');
+    } else {
+        businessRequired($data,['sku'=>128,'category'=>128,'status'=>32]);
+        foreach (['description','shortDescription','collection','fragranceFamily'] as $key) if (!isset($data[$key]) || !is_string($data[$key])) throw new InvalidArgumentException("Field $key must be a string.");
+        if (!in_array($data['status'], ['Borrador','Activo','Inactivo'],true)) throw new InvalidArgumentException('Invalid product status.');
+        if (!isset($data['variants']) || !is_array($data['variants']) || !$data['variants']) throw new InvalidArgumentException('At least one variant is required.');
+        if (isset($data['images']) && (!is_array($data['images']) || count(array_filter($data['images'],'is_string')) !== count($data['images']))) throw new InvalidArgumentException('Images must be strings.');
+    }
+    foreach (['email'=>255,'address'=>500,'notes'=>65535,'shortDescription'=>500,'collection'=>255,'fragranceFamily'=>255,'badge'=>255,'processNotes'=>65535] as $key=>$max) if (isset($data[$key]) && (!is_string($data[$key]) || strlen($data[$key]) > $max)) throw new InvalidArgumentException("Invalid field: $key.");
+}
 /**
  * MEJUNJE Backoffice API - Validation & Utility Functions
  */

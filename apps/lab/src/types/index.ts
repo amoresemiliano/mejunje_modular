@@ -49,6 +49,9 @@ export interface Formula {
   associatedProductId?: string;
   associatedProductName?: string;
   yieldSize: string; // e.g., "200 g", "350 g", "250 ml", "20 kg"
+  yieldUnits?: number;
+  totalCostARS?: number;
+  unitCostARS?: number;
   batchSizeGrams: number;
   status: 'Borrador' | 'En prueba' | 'Aprobada' | 'Archivada';
   version: string; // e.g. "v1", "v2"
@@ -144,6 +147,8 @@ export interface ProductVariant {
   size: string; // "200 g", "350 g"
   unit: string;
   aroma: string; // "Ámbar Botánico", "Lavanda Silvestre"
+  suggestedSalePriceARS?: number;
+  marginPercent?: number;
   salePriceARS: number;
   estimatedCostARS: number;
   status: 'Activo' | 'Inactivo';

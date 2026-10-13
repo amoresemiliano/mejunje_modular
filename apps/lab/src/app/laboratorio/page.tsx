@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
+import BusinessDataSource, { useBusinessMutation } from '@/components/BusinessDataSource';
+import BusinessEditor from '@/components/BusinessEditor';
 import { useKamelo } from '@/context/KameloContext';
 import { Formula, Ingredient, BatchTest, InsumoCategory } from '@/types';
 import { formatCurrency } from '@/utils/formatters';
@@ -33,7 +35,7 @@ import {
 
 export default function LaboratorioPage() {
   const {
-    formulas,
+    formulas: operationalData,
     realIngredients,
     demoIngredients,
     isIngredientsLoading,
@@ -54,6 +56,12 @@ export default function LaboratorioPage() {
     setActiveModal,
     showToast,
   } = useKamelo();
+  const { demoFormulas, isFormulasLoading, formulasError, fetchRealFormulas } = useKamelo();
+  const [demo, setDemo] = useState(false);
+  const formulas = demo ? demoFormulas : operationalData;
+  const { busy, run } = useBusinessMutation(showToast);
+  const [editingRecord, setEditingRecord] = useState<Formula | null>(null);
+
 
   // Primary Sub-navigation Tabs: 'formulas' | 'insumos' | 'batches'
   const [activeTab, setActiveTab] = useState<'formulas' | 'insumos' | 'batches'>('formulas');
@@ -76,7 +84,7 @@ export default function LaboratorioPage() {
   const activeFormula = formulas.find((f) => f.id === selectedFormulaId) || formulas[0];
 
   // Batch multiplier based on batch size or units
-  const currentBatchGrams = (activeFormula?.batchSizeGrams || 2000) * (batchProductionUnits / 10);
+  const currentBatchGrams = (activeFormula?.batchSizeGrams || 2000) * (batchProductionUnits / (activeFormula?.yieldUnits ?? 10));
   const baseBatchGrams = activeFormula?.batchSizeGrams || 2000;
   const multiplier = baseBatchGrams > 0 ? currentBatchGrams / baseBatchGrams : 1;
 
@@ -115,6 +123,7 @@ export default function LaboratorioPage() {
 
   // Handler: Send Batch to Purchases
   const handleSendBatchToPurchases = () => {
+    if (demo) return;
     if (!activeFormula) return;
 
     const itemsToSend = activeFormula.ingredients.map((ing) => ({
@@ -294,7 +303,8 @@ export default function LaboratorioPage() {
 
   const handleSaveNewBatch = (e: React.FormEvent) => {
     e.preventDefault();
-    const f = formulas.find((form) => form.id === newBatchForm.formulaId) || formulas[0];
+    const f = operationalData.find((form) => form.id === newBatchForm.formulaId) || operationalData[0];
+    if (!f) { showToast('Seleccione una fórmula real.', 'warning'); return; }
 
     addBatchTest({
       formulaId: f.id,
@@ -318,6 +328,9 @@ export default function LaboratorioPage() {
 
   return (
     <div className="space-y-8 animate-in fade-in pb-12 font-typewriter max-w-full overflow-hidden">
+      <BusinessDataSource demo={demo} onChange={value => { setDemo(value); setEditingRecord(null); }} loading={isFormulasLoading} error={formulasError} retry={fetchRealFormulas} empty={operationalData.length === 0} />
+      {editingRecord && !demo && <BusinessEditor key={editingRecord.id} record={editingRecord} kind="formula" close={() => setEditingRecord(null)} />}
+
       {/* Page Header */}
       <SectionHero
         title="Laboratorio Olfativo & Insumos Botánicos"
@@ -400,7 +413,7 @@ export default function LaboratorioPage() {
             </div>
 
             <button
-              onClick={() => setActiveModal('formula')}
+              disabled={demo || busy} onClick={() => { if (!demo) setActiveModal('formula'); }}
               className="px-4 py-2 btn-mejunje-primary text-xs rounded-xl flex items-center gap-1.5 shadow-xs shrink-0 self-start sm:self-auto font-bold"
             >
               <Plus className="w-4 h-4" /> Crear Nueva Fórmula
@@ -497,20 +510,21 @@ export default function LaboratorioPage() {
                         </span>
 
                         <div className="flex items-center gap-1.5 text-mejunje-secundario">
-                          <button
+                          <button disabled={demo || busy} onClick={e => { e.stopPropagation(); setEditingRecord(f); }} title="Editar fórmula" className="p-1"><Edit3 className="w-3.5 h-3.5" /></button>
+                          <button disabled={demo || busy}
                             onClick={(e) => {
                               e.stopPropagation();
-                              duplicateFormula(f.id);
+                              if (!demo) void run(() => duplicateFormula(f.id));
                             }}
                             title="Duplicar fórmula"
                             className="p-1 hover:text-mejunje-verdeprofundo transition-colors rounded-lg hover:bg-mejunje-papel"
                           >
                             <Copy className="w-3.5 h-3.5" />
                           </button>
-                          <button
+                          <button disabled={demo || busy}
                             onClick={(e) => {
                               e.stopPropagation();
-                              setFormulaToDelete(f);
+                              if (!demo && !busy) setFormulaToDelete(f);
                             }}
                             title="Eliminar fórmula"
                             className="p-1 hover:text-mejunje-rojo transition-colors rounded-lg hover:bg-mejunje-papel"
@@ -533,6 +547,12 @@ export default function LaboratorioPage() {
                 }`}
               >
                 <div className="atelier-sheet p-5 sm:p-7 space-y-6 min-w-0 max-w-full overflow-hidden">
+                  {!demo && <div className="bg-mejunje-papel rounded-xl p-3 text-sm space-y-1">
+                    <p>Costo total lote: {formatCurrency(activeFormula.totalCostARS ?? 0)}</p>
+                    <p>Rendimiento: {activeFormula.yieldUnits ?? 1} unidades</p>
+                    <p>Costo unitario: {formatCurrency(activeFormula.unitCostARS ?? 0)}</p>
+                    <p className="text-xs">Costos confirmados por el servidor. La calculadora siguiente es una proyección.</p>
+                  </div>}
                   {/* Active Header */}
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-mejunje-border min-w-0">
                     <div className="min-w-0 flex-1">
@@ -990,7 +1010,7 @@ export default function LaboratorioPage() {
                   }
                   className="w-full bg-mejunje-papel border border-mejunje-border rounded-xl px-3 py-2 text-mejunje-carbon focus:outline-none"
                 >
-                  {formulas.map((f) => (
+                  {operationalData.map((f) => (
                     <option key={f.id} value={f.id}>
                       {f.name} ({f.version})
                     </option>
@@ -1128,7 +1148,7 @@ export default function LaboratorioPage() {
 
                 <div className="pt-2 flex items-center justify-between gap-2 flex-wrap">
                   <button
-                    onClick={() => approveBatchFormula(bt.id, bt.formulaId)}
+                    disabled={busy || !operationalData.some(f => f.id === bt.formulaId)} onClick={() => void run(() => approveBatchFormula(bt.id, bt.formulaId))}
                     className="px-3 py-1.5 btn-mejunje-primary text-[11px] rounded-xl flex items-center gap-1 shadow-xs font-bold"
                   >
                     <CheckCircle className="w-3.5 h-3.5" /> Aprobar Fórmula
@@ -1152,7 +1172,7 @@ export default function LaboratorioPage() {
         isOpen={!!formulaToDelete}
         title="Eliminar Fórmula"
         message={`¿Está seguro de eliminar la fórmula "${formulaToDelete?.name}"? Esta acción no se puede deshacer.`}
-        onConfirm={() => formulaToDelete && deleteFormula(formulaToDelete.id)}
+        onConfirm={() => { if (formulaToDelete && !demo) void run(() => deleteFormula(formulaToDelete.id), () => setFormulaToDelete(null)); }}
         onCancel={() => setFormulaToDelete(null)}
       />
 

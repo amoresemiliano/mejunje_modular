@@ -17,11 +17,17 @@ import {
   FileText,
   UserCheck,
 } from '@/components/Icons';
+import BusinessDataSource, { useBusinessMutation } from '@/components/BusinessDataSource';
 import { useKamelo } from '@/context/KameloContext';
 import { ClientContact } from '@/types';
 
 export default function ClientesPage() {
-  const { clients, addClient, updateClient, deleteClient, duplicateClient, showToast } = useKamelo();
+  const { clients: operationalData, addClient, updateClient, deleteClient, duplicateClient, showToast } = useKamelo();
+  const { demoClients, isClientsLoading, clientsError, fetchRealClients } = useKamelo();
+  const [demo, setDemo] = useState(false);
+  const clients = demo ? demoClients : operationalData;
+  const { busy, run } = useBusinessMutation(showToast);
+
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedType, setSelectedType] = useState<string>('Todos');
@@ -40,6 +46,7 @@ export default function ClientesPage() {
   });
 
   const openCreateModal = () => {
+    if (demo || busy) return;
     setEditingClient(null);
     setForm({
       name: '',
@@ -54,6 +61,7 @@ export default function ClientesPage() {
   };
 
   const openEditModal = (client: ClientContact) => {
+    if (demo || busy) return;
     setEditingClient(client);
     setForm({
       name: client.name,
@@ -67,19 +75,15 @@ export default function ClientesPage() {
     setIsModalOpen(true);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name.trim() || !form.phone.trim()) {
       showToast('Por favor complete el nombre y teléfono del cliente.', 'warning');
       return;
     }
 
-    if (editingClient) {
-      updateClient(editingClient.id, form);
-    } else {
-      addClient(form);
-    }
-    setIsModalOpen(false);
+    if (demo || busy) return;
+    await run(() => editingClient ? updateClient(editingClient.id, form) : addClient(form), () => setIsModalOpen(false));
   };
 
   const filteredClients = clients.filter((client) => {
@@ -110,6 +114,8 @@ export default function ClientesPage() {
 
   return (
     <div className="space-y-8 animate-fade-in pb-12">
+      <BusinessDataSource demo={demo} onChange={value => { setDemo(value); setIsModalOpen(false); }} loading={isClientsLoading} error={clientsError} retry={fetchRealClients} empty={operationalData.length === 0} />
+
       {/* Header */}
       <div className="border-b border-mejunje-border pb-6 flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
@@ -129,7 +135,7 @@ export default function ClientesPage() {
         </div>
 
         <button
-          onClick={openCreateModal}
+          disabled={demo || busy} onClick={openCreateModal}
           className="btn-mejunje-primary px-4 py-2.5 rounded-xl text-xs flex items-center gap-2 self-start md:self-auto shadow-xs font-typewriter font-bold"
         >
           <Plus className="w-4 h-4" />
@@ -232,7 +238,7 @@ export default function ClientesPage() {
             No hay registros que coincidan con la búsqueda o filtro seleccionado.
           </p>
           <button
-            onClick={openCreateModal}
+            disabled={demo || busy} onClick={openCreateModal}
             className="btn-mejunje-primary px-4 py-2 rounded-xl text-xs inline-flex items-center gap-1.5 font-typewriter font-bold"
           >
             <Plus className="w-3.5 h-3.5" /> Agregar Nuevo Cliente
@@ -315,21 +321,21 @@ export default function ClientesPage() {
 
                   <div className="flex items-center gap-1">
                     <button
-                      onClick={() => openEditModal(client)}
+                      disabled={demo || busy} onClick={() => openEditModal(client)}
                       title="Editar cliente"
                       className="p-1.5 text-mejunje-secundario hover:text-mejunje-verdeprofundo hover:bg-mejunje-papel rounded-lg transition-colors"
                     >
                       <Edit3 className="w-4 h-4" />
                     </button>
                     <button
-                      onClick={() => duplicateClient(client.id)}
+                      disabled={demo || busy} onClick={() => void run(() => duplicateClient(client.id))}
                       title="Duplicar cliente"
                       className="p-1.5 text-mejunje-secundario hover:text-mejunje-carbon hover:bg-mejunje-papel rounded-lg transition-colors"
                     >
                       <Copy className="w-4 h-4" />
                     </button>
                     <button
-                      onClick={() => deleteClient(client.id)}
+                      disabled={demo || busy} onClick={() => void run(() => deleteClient(client.id))}
                       title="Eliminar cliente"
                       className="p-1.5 text-mejunje-secundario hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                     >
@@ -464,7 +470,7 @@ export default function ClientesPage() {
                   Cancelar
                 </button>
                 <button
-                  type="submit"
+                  disabled={busy || demo} type="submit"
                   className="px-5 py-2 btn-mejunje-primary text-xs rounded-xl shadow-xs flex items-center gap-1.5 font-typewriter font-bold"
                 >
                   <Save className="w-3.5 h-3.5" />
