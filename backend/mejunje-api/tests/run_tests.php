@@ -53,6 +53,8 @@ $phpFiles = [
     __DIR__ . '/../suppliers.php',
     __DIR__ . '/../ingredients.php',
     __DIR__ . '/../health.php',
+    __DIR__ . '/../media.php',
+    __DIR__ . '/../media-validation.php',
 ];
 
 $phpExecutable = defined('PHP_BINARY') ? PHP_BINARY : 'php';
@@ -142,6 +144,7 @@ $validIngredient = [
     'unit' => 'kg',
     'purchasePriceARS' => 42500,
     'referenceQty' => 5,
+    'purchaseUnit' => 'kg',
     'stock' => 25,
     'minStock' => 10
 ];
@@ -155,7 +158,7 @@ $errs = validateIngredientInput($invalidRefQty, false);
 assertTest(!empty($errs) && strpos($errs[0], 'referenceQty') !== false, "referenceQty = 0 is rejected to prevent divide-by-zero");
 
 // Server-side unitCostARS calculation test (42500 / 5 = 8500)
-$calcCost = round($validIngredient['purchasePriceARS'] / $validIngredient['referenceQty'], 4);
+$calcCost = ingredientUnitCost($validIngredient);
 assertTest($calcCost === 8500.0, "Unit cost calculated correctly: 42500 / 5 = 8500.0000");
 
 // Server-side unitCostARS calculation decimal test (1000 / 3 = 333.3333)

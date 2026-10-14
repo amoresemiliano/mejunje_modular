@@ -1,5 +1,6 @@
 'use client';
 import React, { useState } from 'react';
+import ImageField from './ImageField';
 import { Formula, CatalogProduct } from '@/types';
 import { useKamelo } from '@/context/KameloContext';
 import { useBusinessMutation } from './BusinessDataSource';
@@ -13,10 +14,12 @@ export default function BusinessEditor({ record, kind, close }: { record: Formul
   const { realIngredients, realFormulas, updateFormula, updateProduct, showToast } = useKamelo();
   const [formula, setFormula] = useState<Formula>(kind === 'formula' ? record as Formula : {} as Formula);
   const [product, setProduct] = useState<CatalogProduct>(kind === 'product' ? record as CatalogProduct : {} as CatalogProduct);
-  const { busy, run } = useBusinessMutation(showToast);
+  const { busy: saving, run } = useBusinessMutation(showToast);
+  const [uploading, setUploading] = useState(false);
+  const busy = saving || uploading;
   const linkedFormula = realFormulas.find(f => f.id === product.formulaId);
   return <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-    <form className="atelier-sheet bg-white p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto space-y-4" onSubmit={e => { e.preventDefault(); void run(() => kind === 'formula' ? updateFormula(formula.id, formula) : updateProduct(product.id, product), close); }}>
+    <form className="atelier-sheet bg-white p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto space-y-4" onSubmit={e => { e.preventDefault(); if (busy) return; void run(() => kind === 'formula' ? updateFormula(formula.id, formula) : updateProduct(product.id, product), close); }}>
       <h2 className="text-xl font-bold">{kind === 'formula' ? 'Editar fórmula' : 'Editar producto'}</h2>
       <fieldset disabled={busy} className="space-y-4">
       {kind === 'formula' ? <>
@@ -37,6 +40,7 @@ export default function BusinessEditor({ record, kind, close }: { record: Formul
         <button type="button" onClick={() => setFormula({ ...formula, ingredients: [...formula.ingredients, { ingredientId:'', ingredientName:'',category:'',quantity:1,unit:'g',percentage:0,unitCostARS:0,calculatedCostARS:0 }] })}>Agregar insumo</button>
       </> : <>
         <Field label="Nombre" value={product.name} change={name => setProduct({ ...product, name })} />
+        <ImageField value={product.imageUrl} onChange={imageUrl => setProduct({ ...product, imageUrl, images: Array.from(new Set([...(product.images ?? []).filter(url => url !== product.imageUrl), ...(imageUrl ? [imageUrl] : [])])) })} onBusyChange={setUploading} disabled={saving} />
         <Field label="SKU" value={product.sku} change={sku => setProduct({ ...product, sku })} />
         <Field label="Descripción" value={product.description} change={description => setProduct({ ...product, description })} />
         <Field label="Descripción breve" value={product.shortDescription} change={shortDescription => setProduct({ ...product, shortDescription })} />

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import ImageField from '@/components/ImageField';
 import Link from 'next/link';
 import {
   Building2,
@@ -61,6 +62,8 @@ export default function ProveedoresPage() {
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const [uploading, setUploading] = useState(false);
+
   // Form State
   const [form, setForm] = useState<Omit<Supplier, 'id'>>({
     name: '',
@@ -73,6 +76,7 @@ export default function ProveedoresPage() {
     minPurchaseARS: 100000,
     deliveryTimeDays: 3,
     notes: '',
+    imageUrl: '',
   });
 
   const activeSuppliers = dataMode === 'real' ? realSuppliers : demoSuppliers;
@@ -94,6 +98,7 @@ export default function ProveedoresPage() {
       minPurchaseARS: 100000,
       deliveryTimeDays: 3,
       notes: '',
+      imageUrl: '',
     });
     setIsModalOpen(true);
   };
@@ -115,12 +120,14 @@ export default function ProveedoresPage() {
       minPurchaseARS: supplier.minPurchaseARS || 0,
       deliveryTimeDays: supplier.deliveryTimeDays || 3,
       notes: supplier.notes || '',
+      imageUrl: supplier.imageUrl || '',
     });
     setIsModalOpen(true);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (uploading || isSubmitting) return;
     if (!form.name.trim()) {
       showToast('Por favor ingrese el nombre del proveedor.', 'warning');
       return;
@@ -575,7 +582,7 @@ export default function ProveedoresPage() {
           <div className="bg-white rounded-2xl border border-mejunje-border shadow-2xl max-w-lg w-full p-6 relative max-h-[90vh] overflow-y-auto">
             <button
               onClick={() => !isSubmitting && setIsModalOpen(false)}
-              disabled={isSubmitting}
+              disabled={isSubmitting || uploading}
               className="absolute right-4 top-4 text-mejunje-secundario hover:text-mejunje-carbon p-1"
             >
               <X className="w-5 h-5" />
@@ -595,7 +602,8 @@ export default function ProveedoresPage() {
               </div>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-4"><fieldset disabled={isSubmitting || uploading} className="space-y-4">
+              <ImageField value={form.imageUrl} onChange={imageUrl => setForm({ ...form,imageUrl })} onBusyChange={setUploading} disabled={isSubmitting || uploading} />
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs uppercase font-bold text-mejunje-carbon mb-1">
@@ -607,7 +615,7 @@ export default function ProveedoresPage() {
                     placeholder="Ej. Destilería Aromática San Martín"
                     value={form.name}
                     onChange={(e) => setForm({ ...form, name: e.target.value })}
-                    disabled={isSubmitting}
+                    disabled={isSubmitting || uploading}
                     className="w-full bg-white border border-mejunje-border rounded-xl px-3.5 py-2 text-xs text-mejunje-carbon focus:outline-none focus:border-mejunje-verdeseco"
                   />
                 </div>
@@ -621,7 +629,7 @@ export default function ProveedoresPage() {
                     placeholder="Ej. Juan Pérez"
                     value={form.contactPerson}
                     onChange={(e) => setForm({ ...form, contactPerson: e.target.value })}
-                    disabled={isSubmitting}
+                    disabled={isSubmitting || uploading}
                     className="w-full bg-white border border-mejunje-border rounded-xl px-3.5 py-2 text-xs text-mejunje-carbon focus:outline-none focus:border-mejunje-verdeseco"
                   />
                 </div>
@@ -637,7 +645,7 @@ export default function ProveedoresPage() {
                     placeholder="+54911..."
                     value={form.phoneWhatsApp}
                     onChange={(e) => setForm({ ...form, phoneWhatsApp: e.target.value })}
-                    disabled={isSubmitting}
+                    disabled={isSubmitting || uploading}
                     className="w-full bg-white border border-mejunje-border rounded-xl px-3.5 py-2 text-xs text-mejunje-carbon focus:outline-none focus:border-mejunje-verdeseco"
                   />
                 </div>
@@ -651,7 +659,7 @@ export default function ProveedoresPage() {
                     placeholder="ventas@proveedor.com.ar"
                     value={form.email}
                     onChange={(e) => setForm({ ...form, email: e.target.value })}
-                    disabled={isSubmitting}
+                    disabled={isSubmitting || uploading}
                     className="w-full bg-white border border-mejunje-border rounded-xl px-3.5 py-2 text-xs text-mejunje-carbon focus:outline-none focus:border-mejunje-verdeseco"
                   />
                 </div>
@@ -667,7 +675,7 @@ export default function ProveedoresPage() {
                     placeholder="https://www.proveedor.com.ar"
                     value={form.web}
                     onChange={(e) => setForm({ ...form, web: e.target.value })}
-                    disabled={isSubmitting}
+                    disabled={isSubmitting || uploading}
                     className="w-full bg-white border border-mejunje-border rounded-xl px-3.5 py-2 text-xs text-mejunje-carbon focus:outline-none focus:border-mejunje-verdeseco"
                   />
                 </div>
@@ -681,7 +689,7 @@ export default function ProveedoresPage() {
                     placeholder="Buenos Aires"
                     value={form.location}
                     onChange={(e) => setForm({ ...form, location: e.target.value })}
-                    disabled={isSubmitting}
+                    disabled={isSubmitting || uploading}
                     className="w-full bg-white border border-mejunje-border rounded-xl px-3.5 py-2 text-xs text-mejunje-carbon focus:outline-none focus:border-mejunje-verdeseco"
                   />
                 </div>
@@ -698,7 +706,7 @@ export default function ProveedoresPage() {
                     placeholder="100000"
                     value={form.minPurchaseARS}
                     onChange={(e) => setForm({ ...form, minPurchaseARS: Number(e.target.value) })}
-                    disabled={isSubmitting}
+                    disabled={isSubmitting || uploading}
                     className="w-full bg-white border border-mejunje-border rounded-xl px-3.5 py-2 text-xs text-mejunje-carbon focus:outline-none focus:border-mejunje-verdeseco"
                   />
                 </div>
@@ -713,7 +721,7 @@ export default function ProveedoresPage() {
                     placeholder="3"
                     value={form.deliveryTimeDays}
                     onChange={(e) => setForm({ ...form, deliveryTimeDays: Number(e.target.value) })}
-                    disabled={isSubmitting}
+                    disabled={isSubmitting || uploading}
                     className="w-full bg-white border border-mejunje-border rounded-xl px-3.5 py-2 text-xs text-mejunje-carbon focus:outline-none focus:border-mejunje-verdeseco"
                   />
                 </div>
@@ -732,7 +740,7 @@ export default function ProveedoresPage() {
                         type="button"
                         key={cat}
                         onClick={() => toggleFormCategory(cat)}
-                        disabled={isSubmitting}
+                        disabled={isSubmitting || uploading}
                         className={`px-2.5 py-1 rounded-lg text-xs transition-all ${
                           isSelected
                             ? 'bg-mejunje-verdeprofundo text-white font-bold'
@@ -755,7 +763,7 @@ export default function ProveedoresPage() {
                   placeholder="Pureza de materias primas, acuerdos de pago, datos de cuenta bancaria..."
                   value={form.notes}
                   onChange={(e) => setForm({ ...form, notes: e.target.value })}
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || uploading}
                   className="w-full bg-white border border-mejunje-border rounded-xl p-3 text-xs text-mejunje-carbon focus:outline-none focus:border-mejunje-verdeseco resize-none"
                 />
               </div>
@@ -763,15 +771,14 @@ export default function ProveedoresPage() {
               <div className="pt-4 flex items-center justify-end gap-3 border-t border-mejunje-border">
                 <button
                   type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || uploading} onClick={() => setIsModalOpen(false)}
                   className="px-4 py-2 btn-mejunje-secondary text-xs rounded-xl"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || uploading}
                   className="px-5 py-2 btn-mejunje-primary text-xs rounded-xl shadow-xs flex items-center gap-1.5 font-bold disabled:opacity-50"
                 >
                   {isSubmitting ? (
@@ -787,7 +794,7 @@ export default function ProveedoresPage() {
                   )}
                 </button>
               </div>
-            </form>
+            </fieldset></form>
           </div>
         </div>
       )}

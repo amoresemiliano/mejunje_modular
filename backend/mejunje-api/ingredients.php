@@ -25,6 +25,7 @@ function mapIngredientToApi(array $row): array {
         'name'             => (string)$row['name'],
         'category'         => (string)$row['category'],
         'unit'             => (string)$row['unit'],
+        'purchaseUnit'     => (string)($row['purchase_unit'] ?? $row['unit']),
         'purchasePriceARS' => isset($row['purchase_price_ars']) ? (float)$row['purchase_price_ars'] : 0.0,
         'referenceQty'     => isset($row['reference_qty']) ? (float)$row['reference_qty'] : 1.0,
         'unitCostARS'      => isset($row['unit_cost_ars']) ? (float)$row['unit_cost_ars'] : 0.0,
@@ -91,7 +92,9 @@ switch ($method) {
         $referenceQty = (float)$input['referenceQty'];
 
         // SERVER-SIDE unitCostARS CALCULATION
-        $unitCostARS = round($purchasePriceARS / $referenceQty, 4);
+        try { $unitCostARS = ingredientUnitCost($input); }
+        catch (InvalidArgumentException $e) { sendError('VALIDATION_ERROR', $e->getMessage(), 400); }
+        $purchaseUnit = $input['purchaseUnit'];
 
         $stock = isset($input['stock']) ? (float)$input['stock'] : 0.0000;
         $minStock = isset($input['minStock']) ? (float)$input['minStock'] : 0.0000;
@@ -99,10 +102,10 @@ switch ($method) {
         $imageUrl = isset($input['imageUrl']) && trim((string)$input['imageUrl']) !== '' ? trim((string)$input['imageUrl']) : null;
 
         $sql = "INSERT INTO ingredients (
-                    id, name, category, unit, purchase_price_ars, reference_qty, unit_cost_ars,
+                    id, name, category, unit, purchase_unit, purchase_price_ars, reference_qty, unit_cost_ars,
                     stock, min_stock, default_supplier_id, image_url, is_active
                 ) VALUES (
-                    :id, :name, :category, :unit, :purchase_price_ars, :reference_qty, :unit_cost_ars,
+                    :id, :name, :category, :unit, :purchase_unit, :purchase_price_ars, :reference_qty, :unit_cost_ars,
                     :stock, :min_stock, :default_supplier_id, :image_url, 1
                 )";
 
@@ -112,6 +115,7 @@ switch ($method) {
             'name'                => $name,
             'category'            => $category,
             'unit'                => $unit,
+            'purchase_unit'       => $purchaseUnit,
             'purchase_price_ars'  => $purchasePriceARS,
             'reference_qty'       => $referenceQty,
             'unit_cost_ars'       => $unitCostARS,
@@ -179,18 +183,26 @@ switch ($method) {
             $params['reference_qty'] = (float)$input['referenceQty'];
         }
 
-        // Recalculate unit_cost_ars if price or referenceQty changed or updated
-        $newPurchasePrice = array_key_exists('purchasePriceARS', $input)
-            ? (float)$input['purchasePriceARS']
-            : (float)$existing['purchase_price_ars'];
-
-        $newRefQty = array_key_exists('referenceQty', $input)
-            ? (float)$input['referenceQty']
-            : (float)$existing['reference_qty'];
-
-        $unitCostARS = round($newPurchasePrice / $newRefQty, 4);
-        $updates[] = 'unit_cost_ars = :unit_cost_ars';
-        $params['unit_cost_ars'] = $unitCostARS;
+        if (array_key_exists('purchaseUnit', $input)) {
+            $updates[] = 'purchase_unit = :purchase_unit';
+            $params['purchase_unit'] = $input['purchaseUnit'];
+        }
+        // Validate the merged pair for partial PUT/PATCH, including legacy values.
+        $costFields = array_intersect(['purchasePriceARS','referenceQty','purchaseUnit','unit'], array_keys($input));
+        if ($costFields) {
+            // Changing a canonical stock unit would reinterpret existing stock and open POs.
+            if (isset($input['unit']) && $input['unit'] !== $existing['unit']) {
+                if ((float)$existing['stock'] != 0 || (float)$existing['min_stock'] != 0) {
+                    sendError('VALIDATION_ERROR', 'Para cambiar la unidad de consumo, deje stock y stock mínimo en cero primero.', 400);
+                }
+                $openPo = $pdo->prepare("SELECT 1 FROM purchase_order_items poi JOIN purchase_orders po ON po.id = poi.purchase_order_id WHERE poi.ingredient_id = :id AND po.is_active = 1 AND po.status NOT IN ('Recibida','Cancelada') LIMIT 1");
+                $openPo->execute(['id'=>$targetId]);
+                if ($openPo->fetch()) sendError('VALIDATION_ERROR', 'Hay compras abiertas para este insumo; conserve su unidad de consumo.', 400);
+            }
+            try { $params['unit_cost_ars'] = ingredientUnitCost($input, $existing); }
+            catch (InvalidArgumentException $e) { sendError('VALIDATION_ERROR', $e->getMessage(), 400); }
+            $updates[] = 'unit_cost_ars = :unit_cost_ars';
+        }
 
         if (array_key_exists('stock', $input)) {
             $updates[] = 'stock = :stock';

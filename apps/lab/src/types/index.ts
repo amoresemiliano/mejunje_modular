@@ -13,13 +13,16 @@ export type InsumoCategory =
   | 'Bases'
   | 'Otros';
 
+export type StockUnit = 'g' | 'kg' | 'ml' | 'l' | 'unid';
+
 export interface Ingredient {
   id: string;
   name: string;
   category: InsumoCategory;
   unit: 'g' | 'kg' | 'ml' | 'l' | 'unid' | '%';
   purchasePriceARS: number;
-  referenceQty: number; // e.g. 5 (kg) or 1000 (ml)
+  purchaseUnit?: Ingredient['unit']; // Optional only for legacy/demo fixtures. Real API always supplies it.
+  referenceQty: number; // Purchased quantity in purchaseUnit
   unitCostARS: number; // calculated price per unit (per g or per ml or per unid)
   stock: number;
   minStock: number;

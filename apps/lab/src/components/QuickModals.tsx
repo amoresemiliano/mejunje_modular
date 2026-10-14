@@ -1,6 +1,9 @@
 'use client';
 
 import React, { useState } from 'react';
+import ClientEditor from './ClientEditor';
+import IngredientEditor from './IngredientEditor';
+import ImageField from './ImageField';
 import { useBusinessMutation } from './BusinessDataSource';
 import { useKamelo } from '@/context/KameloContext';
 import {
@@ -32,7 +35,10 @@ export default function QuickModals() {
     showToast,
   } = useKamelo();
 
-  const { busy, run } = useBusinessMutation(showToast);
+  const { busy: saving, run } = useBusinessMutation(showToast);
+  const [uploading, setUploading] = useState(false);
+  const busy = saving || uploading;
+  const [isSubmittingSupplier, setIsSubmittingSupplier] = useState(false);
 
   // ---------------------------------------------------------------------------
   // 1. CREAR FÓRMULA STATE
@@ -105,6 +111,7 @@ export default function QuickModals() {
     minPurchaseARS: 150000,
     deliveryTimeDays: 3,
     categoriesSupplied: ['Fragancias'],
+    imageUrl: '',
     notes: '',
   });
 
@@ -120,6 +127,8 @@ export default function QuickModals() {
   });
 
   if (!activeModal) return null;
+  if (activeModal === 'client') return <ClientEditor close={() => setActiveModal(null)} />;
+  if (activeModal === 'ingredient') return <IngredientEditor close={() => setActiveModal(null)} />;
 
   // Handlers for Formula
   const handleSaveFormula = async (e: React.FormEvent) => {
@@ -178,14 +187,7 @@ export default function QuickModals() {
       return;
     }
 
-    const defaultCategoryImages: Record<string, string> = {
-      'Velas Botánicas': 'https://images.unsplash.com/photo-1603006905003-be475563bc59?auto=format&fit=crop&w=1000&q=80',
-      'Difusores de Ambiente': 'https://images.unsplash.com/photo-1616949755610-8c9bbc08f138?auto=format&fit=crop&w=1000&q=80',
-      'Perfumes Finos': 'https://images.unsplash.com/photo-1541643600914-78b084683601?auto=format&fit=crop&w=1000&q=80',
-      'Cosmética Natural': 'https://images.unsplash.com/photo-1598880940371-c756e015fea1?auto=format&fit=crop&w=1000&q=80',
-    };
-
-    const finalImg = productForm.imageUrl.trim() || defaultCategoryImages[productForm.category] || defaultCategoryImages['Velas Botánicas'];
+    const finalImg = productForm.imageUrl.trim();
 
     await run(() => addProduct({
       formulaId: productForm.formulaId || undefined,
@@ -198,7 +200,7 @@ export default function QuickModals() {
       fragranceFamily: productForm.fragranceFamily,
       status: productForm.status,
       imageUrl: finalImg,
-      images: [finalImg],
+      images: finalImg ? [finalImg] : [],
       variants: [
         {
           id: `var-${Date.now()}`,
@@ -216,8 +218,8 @@ export default function QuickModals() {
   };
 
   // Handlers for PO
-  const activeSuppliersForPO = realSuppliers.length > 0 ? realSuppliers : suppliers;
-  const activeIngredientsForPO = realIngredients.length > 0 ? realIngredients : ingredients;
+  const activeSuppliersForPO = realSuppliers;
+  const activeIngredientsForPO = realIngredients;
 
   const handleSavePO = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -275,8 +277,6 @@ export default function QuickModals() {
     }
   };
 
-  const [isSubmittingSupplier, setIsSubmittingSupplier] = useState(false);
-
   // Handlers for Supplier
   const handleSaveSupplier = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -285,6 +285,7 @@ export default function QuickModals() {
       return;
     }
 
+    if (busy || isSubmittingSupplier) return;
     setIsSubmittingSupplier(true);
     try {
       await addSupplier({
@@ -298,6 +299,7 @@ export default function QuickModals() {
         minPurchaseARS: Number(supplierForm.minPurchaseARS),
         deliveryTimeDays: Number(supplierForm.deliveryTimeDays),
         notes: supplierForm.notes,
+        imageUrl: supplierForm.imageUrl,
       });
       setActiveModal(null);
     } catch (err) {
@@ -606,16 +608,7 @@ export default function QuickModals() {
                 />
               </div>
 
-              <div>
-                <label className="block text-xs uppercase text-mejunje-carbon font-bold mb-1">URL de Fotografía del Producto (Opcional)</label>
-                <input
-                  type="url"
-                  placeholder="https://images.unsplash.com/... (Dejar vacío para usar imagen automática)"
-                  value={productForm.imageUrl}
-                  onChange={(e) => setProductForm({ ...productForm, imageUrl: e.target.value })}
-                  className="w-full bg-white border border-mejunje-border rounded-xl px-3.5 py-2 text-xs text-mejunje-carbon focus:outline-none"
-                />
-              </div>
+              <ImageField value={productForm.imageUrl} onChange={imageUrl => setProductForm({ ...productForm, imageUrl })} onBusyChange={setUploading} disabled={saving} />
 
               <div className="bg-mejunje-papel p-4 rounded-2xl border border-mejunje-border space-y-3">
                 <span className="text-xs font-bold uppercase text-mejunje-carbon">Presentación Inicial</span>
@@ -695,6 +688,7 @@ export default function QuickModals() {
               </div>
 
               <form onSubmit={handleSavePO} className="space-y-4">
+                <p className="text-xs">La cantidad y el precio unitario se expresan en la unidad de consumo del insumo (stock), no en su presentación de compra. Ejemplo: 5 kg de un insumo en g = 5000 g.</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs uppercase text-mejunje-carbon font-bold mb-1">Proveedor *</label>
@@ -804,7 +798,8 @@ export default function QuickModals() {
                               step="0.0001"
                               min="0.0001"
                               placeholder="Cant"
-                              value={item.requiredQty}
+                              aria-label={`Cantidad (${activeIngredientsForPO.find(i => i.id === item.ingredientId)?.unit ?? "unidad de consumo"})`}
+                            value={item.requiredQty}
                               onChange={(e) => {
                                 const next = [...poForm.items];
                                 next[idx].requiredQty = Number(e.target.value);
@@ -910,7 +905,8 @@ export default function QuickModals() {
               </div>
             </div>
 
-            <form onSubmit={handleSaveSupplier} className="space-y-4">
+            <form onSubmit={handleSaveSupplier} className="space-y-4"><fieldset disabled={busy || isSubmittingSupplier} className="space-y-4">
+              <ImageField value={supplierForm.imageUrl} onChange={imageUrl => setSupplierForm({ ...supplierForm,imageUrl })} onBusyChange={setUploading} disabled={saving} />
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs uppercase text-mejunje-carbon font-bold mb-1">Razón Social o Nombre *</label>
@@ -1000,13 +996,13 @@ export default function QuickModals() {
                 </button>
                 <button
                   type="submit"
-                  disabled={isSubmittingSupplier}
+                  disabled={busy || isSubmittingSupplier}
                   className="px-5 py-2 btn-mejunje-primary text-xs rounded-xl shadow-xs flex items-center gap-1.5 disabled:opacity-50"
                 >
                   <Building2 className="w-4 h-4" /> {isSubmittingSupplier ? 'Registrando en MySQL...' : 'Registrar Proveedor'}
                 </button>
               </div>
-            </form>
+            </fieldset></form>
           </div>
         )}
 

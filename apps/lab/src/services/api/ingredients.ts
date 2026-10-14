@@ -11,6 +11,7 @@ export interface IngredientApiDto {
   name: string;
   category: string;
   unit: Ingredient['unit'];
+  purchaseUnit?: Ingredient['unit'];
   purchasePriceARS: number;
   referenceQty: number;
   unitCostARS: number;
@@ -34,6 +35,7 @@ export function mapIngredientApiDto(dto: IngredientApiDto): Ingredient {
     name: dto.name,
     category: dto.category as InsumoCategory,
     unit: dto.unit,
+    purchaseUnit: dto.purchaseUnit ?? dto.unit,
     purchasePriceARS: Number(dto.purchasePriceARS),
     referenceQty: Number(dto.referenceQty),
     unitCostARS: Number(dto.unitCostARS),
@@ -49,7 +51,8 @@ export function mapIngredientApiDto(dto: IngredientApiDto): Ingredient {
 export interface CreateIngredientInput {
   name: string;
   category: InsumoCategory | string;
-  unit: 'g' | 'kg' | 'ml' | 'l' | 'unid' | '%';
+  unit: 'g' | 'kg' | 'ml' | 'l' | 'unid';
+  purchaseUnit: 'g' | 'kg' | 'ml' | 'l' | 'unid';
   purchasePriceARS: number;
   referenceQty: number;
   stock?: number;
@@ -83,7 +86,7 @@ export async function getIngredientByIdApi(id: string): Promise<Ingredient> {
 
 /**
  * Create a new ingredient in MySQL database.
- * Server calculates unitCostARS = purchasePriceARS / referenceQty.
+ * Server calculates cost per canonical unit after purchase quantity conversion.
  * Server generates unique ID ing-<hex>.
  */
 export async function createIngredientApi(input: CreateIngredientInput): Promise<Ingredient> {

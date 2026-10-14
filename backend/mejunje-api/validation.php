@@ -184,6 +184,23 @@ if (!function_exists('validateIngredientInput')) {
             }
         }
 
+        foreach (['unit', 'purchaseUnit'] as $field) {
+            if (array_key_exists($field, $data) && (!is_string($data[$field]) || !in_array($data[$field], ['g','kg','ml','l','unid'], true))) {
+                $errors[] = "Unidad de compra/consumo no válida: $field.";
+            }
+        }
+        if (!$isUpdate && !isset($data['purchaseUnit'])) $errors[] = 'La unidad de compra es obligatoria.';
+        if (isset($data['unit'], $data['purchaseUnit'])) {
+            try { convertIngredientQuantity(1, $data['purchaseUnit'], $data['unit']); }
+            catch (InvalidArgumentException $e) { $errors[] = $e->getMessage(); }
+        }
+        foreach (['purchasePriceARS','referenceQty','stock','minStock'] as $field) {
+            if (array_key_exists($field, $data)) {
+                try { businessNumber($data[$field], $field, $field === 'referenceQty'); }
+                catch (InvalidArgumentException $e) { $errors[] = $e->getMessage(); }
+            }
+        }
+
         // Validate active supplier existence if supplierId is provided
         if (array_key_exists('supplierId', $data) && $data['supplierId'] !== null && trim((string)$data['supplierId']) !== '') {
             $supplierId = trim((string)$data['supplierId']);
@@ -290,4 +307,27 @@ if (!function_exists('validatePurchaseOrderInput')) {
 
         return $errors;
     }
+}
+
+/** Convert only compatible stock dimensions; never infer density. */
+function convertIngredientQuantity(float $quantity, string $from, string $to): float {
+    $units = ['g'=>['mass',1], 'kg'=>['mass',1000], 'ml'=>['volume',1], 'l'=>['volume',1000], 'unid'=>['count',1]];
+    if (!isset($units[$from], $units[$to]) || $units[$from][0] !== $units[$to][0]) {
+        throw new InvalidArgumentException('Unidades de compra y consumo incompatibles.');
+    }
+    if (!is_finite($quantity) || $quantity <= 0) throw new InvalidArgumentException('La cantidad comprada debe ser mayor que cero.');
+    $result = $quantity * $units[$from][1] / $units[$to][1];
+    if (!is_finite($result) || $result <= 0) throw new InvalidArgumentException('Cantidad normalizada fuera de rango.');
+    return $result;
+}
+/** Merge partial updates with persisted values before calculating authoritative cost. */
+function ingredientUnitCost(array $input, array $existing = []): float {
+    $price = businessNumber($input['purchasePriceARS'] ?? $existing['purchase_price_ars'] ?? 0, 'purchasePriceARS');
+    $qty = businessNumber($input['referenceQty'] ?? $existing['reference_qty'] ?? null, 'referenceQty', true);
+    $unit = $input['unit'] ?? $existing['unit'] ?? '';
+    $purchaseUnit = $input['purchaseUnit'] ?? $existing['purchase_unit'] ?? $existing['unit'] ?? '';
+    $normalized = convertIngredientQuantity($qty, $purchaseUnit, $unit);
+    $cost = $price / $normalized;
+    if (!is_finite($cost) || $cost >= 10000000000) throw new InvalidArgumentException('Costo unitario fuera de rango.');
+    return round($cost, 4);
 }

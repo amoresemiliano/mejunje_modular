@@ -254,7 +254,7 @@ switch ($method) {
             // ATOMIC RECEIVING & STOCK INCREMENT WORKFLOW
             $newReceivedAt = $currentReceivedAt;
             if ($newStatus === 'Recibida' && $currentStatus !== 'Recibida' && $currentReceivedAt === null) {
-                $itemsStmt = $pdo->prepare("SELECT ingredient_id, ingredient_name, ordered_qty FROM purchase_order_items WHERE purchase_order_id = :po_id");
+                $itemsStmt = $pdo->prepare("SELECT ingredient_id, ingredient_name, ordered_qty, unit FROM purchase_order_items WHERE purchase_order_id = :po_id");
                 $itemsStmt->execute(['po_id' => $targetId]);
                 $itemsToReceive = $itemsStmt->fetchAll();
 
@@ -262,7 +262,7 @@ switch ($method) {
                 foreach ($itemsToReceive as $itemRec) {
                     if ($itemRec['ingredient_id'] !== null) {
                         $ingId = $itemRec['ingredient_id'];
-                        $ingLockStmt = $pdo->prepare("SELECT id, name, is_active FROM ingredients WHERE id = :ing_id FOR UPDATE");
+                        $ingLockStmt = $pdo->prepare("SELECT id, name, is_active, unit FROM ingredients WHERE id = :ing_id FOR UPDATE");
                         $ingLockStmt->execute(['ing_id' => $ingId]);
                         $ingRow = $ingLockStmt->fetch();
 
@@ -270,6 +270,10 @@ switch ($method) {
                             $ingName = !empty($itemRec['ingredient_name']) ? $itemRec['ingredient_name'] : ($ingRow['name'] ?? $ingId);
                             $pdo->rollBack();
                             sendError('VALIDATION_ERROR', "Cannot receive Purchase Order: linked ingredient '{$ingName}' is missing or inactive.", 400);
+                        }
+                        if ($ingRow['unit'] !== $itemRec['unit']) {
+                            $pdo->rollBack();
+                            sendError('VALIDATION_ERROR', 'La unidad de la orden no coincide con la unidad actual del insumo. Revise la compra antes de recibirla.', 400);
                         }
                     }
                 }
