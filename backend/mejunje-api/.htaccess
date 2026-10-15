@@ -3,6 +3,10 @@
 
 <IfModule mod_rewrite.c>
     RewriteEngine On
+    # Only generated raster filenames may be served from the upload tree.
+    RewriteRule ^uploads/images/img-[a-f0-9]{48}\.(jpg|png|webp)$ - [L]
+    RewriteRule ^uploads(?:/|$) - [F,L]
+    RewriteRule ^media/?$ media.php [L,QSA]
     RewriteRule ^clients/?$ clients.php [L,QSA]
     RewriteRule ^formulas/?$ formulas.php [L,QSA]
     RewriteRule ^catalog-products/?$ catalog-products.php [L,QSA]
@@ -34,3 +38,7 @@ Options -Indexes
 
 # UTF-8 character encoding header
 AddDefaultCharset UTF-8
+
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+</IfModule>

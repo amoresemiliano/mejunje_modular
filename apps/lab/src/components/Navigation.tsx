@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { creationActions } from './creationActions';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -143,49 +144,7 @@ export default function Navigation() {
           {/* Quick Menu Popover */}
           {quickMenuOpen && (
             <div className="absolute left-5 right-5 top-16 bg-white border border-mejunje-border rounded-2xl shadow-xl p-2 z-50 animate-in fade-in zoom-in-95 space-y-1 text-xs text-mejunje-carbon">
-              <button
-                onClick={() => {
-                  setActiveModal('formula');
-                  setQuickMenuOpen(false);
-                }}
-                className="w-full flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-mejunje-papel text-left transition-colors"
-              >
-                <FlaskConical className="w-3.5 h-3.5 text-mejunje-verdeprofundo" />
-                <span>Nueva Fórmula</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  setActiveModal('product');
-                  setQuickMenuOpen(false);
-                }}
-                className="w-full flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-mejunje-papel text-left transition-colors"
-              >
-                <BookOpen className="w-3.5 h-3.5 text-mejunje-terracota" />
-                <span>Nuevo Producto</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  setActiveModal('purchaseOrder');
-                  setQuickMenuOpen(false);
-                }}
-                className="w-full flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-mejunje-papel text-left transition-colors"
-              >
-                <ShoppingBag className="w-3.5 h-3.5 text-mejunje-ambar" />
-                <span>Orden de Compra</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  setActiveModal('supplier');
-                  setQuickMenuOpen(false);
-                }}
-                className="w-full flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-mejunje-papel text-left transition-colors"
-              >
-                <Building2 className="w-3.5 h-3.5 text-mejunje-secundario" />
-                <span>Nuevo Proveedor</span>
-              </button>
+              {creationActions.map(action => <button key={action.id} onClick={() => { setActiveModal(action.id); setQuickMenuOpen(false); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-mejunje-papel text-left transition-colors"><Plus className="w-3.5 h-3.5" />{action.label}</button>)}
             </div>
           )}
         </div>
@@ -289,14 +248,16 @@ export default function Navigation() {
 
           {/* Quick Action Button for Mobile */}
           <button
-            onClick={() => setActiveModal('formula')}
-            aria-label="Nueva Fórmula"
+            onClick={() => setQuickMenuOpen(!quickMenuOpen)}
+            aria-expanded={quickMenuOpen}
+            aria-label="Nueva Entrada"
             className="p-2 rounded-xl btn-mejunje-primary text-xs shadow-xs flex items-center gap-1 font-bold"
           >
             <Plus className="w-4 h-4" />
-            <span className="hidden sm:inline">Nueva Fórmula</span>
+            <span className="hidden sm:inline">Nueva Entrada</span>
           </button>
         </div>
+        {quickMenuOpen && <div className="absolute right-4 top-full bg-white border rounded-xl p-2 shadow-xl min-w-44">{creationActions.map(action => <button key={action.id} className="block w-full text-left px-4 py-2 text-sm hover:bg-mejunje-papel rounded-lg" onClick={() => { setActiveModal(action.id); setQuickMenuOpen(false); setMobileDrawerOpen(false); }}>{action.label}</button>)}</div>}
       </header>
 
       {/* =================================================================== */}

@@ -67,7 +67,7 @@ export interface ProductWriteDto {
   fragranceFamily?: CatalogProduct['fragranceFamily'];
   status?: CatalogProduct['status'];
   formulaId?: string | null;
-  imageUrl?: CatalogProduct['imageUrl'];
+  imageUrl?: string | null;
   images?: CatalogProduct['images'];
   badge?: CatalogProduct['badge'];
   topNotes?: CatalogProduct['topNotes'];
@@ -87,8 +87,8 @@ function writePayload(input: Partial<CatalogProduct>): ProductWriteDto {
     fragranceFamily: input.fragranceFamily,
     status: input.status,
     formulaId: Object.prototype.hasOwnProperty.call(input, 'formulaId') ? input.formulaId || null : undefined,
-    imageUrl: input.imageUrl,
-    images: input.images,
+    imageUrl: Object.prototype.hasOwnProperty.call(input, "imageUrl") ? input.imageUrl?.trim() || null : undefined,
+    images: input.images ? Array.from(new Set([...(input.images.filter(Boolean)), ...(input.imageUrl?.trim() ? [input.imageUrl.trim()] : [])])) : undefined,
     badge: input.badge,
     topNotes: input.topNotes,
     heartNotes: input.heartNotes,

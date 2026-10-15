@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import BusinessDataSource, { useBusinessMutation } from '@/components/BusinessDataSource';
 import BusinessEditor from '@/components/BusinessEditor';
+import IngredientEditor from '@/components/IngredientEditor';
 import { useKamelo } from '@/context/KameloContext';
 import { Formula, Ingredient, BatchTest, InsumoCategory } from '@/types';
 import { formatCurrency } from '@/utils/formatters';
@@ -41,8 +42,6 @@ export default function LaboratorioPage() {
     isIngredientsLoading,
     ingredientsError,
     fetchRealIngredients,
-    addIngredient,
-    updateIngredient,
     deleteIngredient,
     realSuppliers,
     demoSuppliers,
@@ -145,21 +144,8 @@ export default function LaboratorioPage() {
   const [insumoCategoryFilter, setInsumoCategoryFilter] = useState<string>('Todas');
   const [insumoToDelete, setInsumoToDelete] = useState<Ingredient | null>(null);
   const [editingInsumo, setEditingInsumo] = useState<Ingredient | null>(null);
-  const [isSubmittingInsumo, setIsSubmittingInsumo] = useState(false);
 
   const activeInsumos = insumoDataMode === 'real' ? realIngredients : demoIngredients;
-
-  const [newInsumoForm, setNewInsumoForm] = useState({
-    name: '',
-    category: 'Fragancias' as InsumoCategory,
-    unit: 'ml' as Ingredient['unit'],
-    purchasePriceARS: 120000,
-    referenceQty: 1000,
-    stock: 500,
-    minStock: 200,
-    supplierId: realSuppliers[0]?.id || '',
-    imageUrl: 'https://images.unsplash.com/photo-1608571423902-eed4a5ad8108?auto=format&fit=crop&w=600&q=80',
-  });
 
   const filteredInsumos = activeInsumos.filter((ing) => {
     const matchesSearch =
@@ -169,105 +155,9 @@ export default function LaboratorioPage() {
     return matchesSearch && matchesCat;
   });
 
-  const openCreateInsumoModal = () => {
-    if (insumoDataMode === 'demo') {
-      showToast('Cambiá al modo "Datos Reales (API MySQL)" para registrar materias primas operativas.', 'info');
-      return;
-    }
-    setEditingInsumo({
-      id: '',
-      name: '',
-      category: 'Fragancias',
-      unit: 'ml',
-      purchasePriceARS: 120000,
-      referenceQty: 1000,
-      unitCostARS: 120,
-      stock: 500,
-      minStock: 200,
-      supplierId: realSuppliers[0]?.id || '',
-      supplierName: realSuppliers[0]?.name || '',
-      lastUpdated: new Date().toLocaleDateString('es-AR'),
-      imageUrl: 'https://images.unsplash.com/photo-1608571423902-eed4a5ad8108?auto=format&fit=crop&w=600&q=80',
-    });
-    setNewInsumoForm({
-      name: '',
-      category: 'Fragancias',
-      unit: 'ml',
-      purchasePriceARS: 120000,
-      referenceQty: 1000,
-      stock: 500,
-      minStock: 200,
-      supplierId: realSuppliers[0]?.id || '',
-      imageUrl: 'https://images.unsplash.com/photo-1608571423902-eed4a5ad8108?auto=format&fit=crop&w=600&q=80',
-    });
-  };
-
-  const openEditInsumoModal = (ing: Ingredient) => {
-    if (insumoDataMode === 'demo') {
-      showToast('Los registros de demostración son sólo lectura.', 'info');
-      return;
-    }
-    setEditingInsumo(ing);
-    setNewInsumoForm({
-      name: ing.name,
-      category: ing.category,
-      unit: ing.unit,
-      purchasePriceARS: ing.purchasePriceARS,
-      referenceQty: ing.referenceQty,
-      stock: ing.stock,
-      minStock: ing.minStock,
-      supplierId: ing.supplierId || realSuppliers[0]?.id || '',
-      imageUrl: ing.imageUrl || 'https://images.unsplash.com/photo-1608571423902-eed4a5ad8108?auto=format&fit=crop&w=600&q=80',
-    });
-  };
-
-  const handleSaveNewInsumo = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newInsumoForm.name.trim()) {
-      showToast('Por favor ingrese el nombre de la materia prima.', 'warning');
-      return;
-    }
-
-    const sup = realSuppliers.find((s) => s.id === newInsumoForm.supplierId) || realSuppliers[0];
-    if (!sup) {
-      showToast('Debe haber al menos un proveedor real registrado en MySQL para asociar el insumo.', 'warning');
-      return;
-    }
-
-    setIsSubmittingInsumo(true);
-    try {
-      if (editingInsumo && editingInsumo.id) {
-        await updateIngredient(editingInsumo.id, {
-          name: newInsumoForm.name,
-          category: newInsumoForm.category,
-          unit: newInsumoForm.unit,
-          purchasePriceARS: Number(newInsumoForm.purchasePriceARS),
-          referenceQty: Number(newInsumoForm.referenceQty),
-          stock: Number(newInsumoForm.stock),
-          minStock: Number(newInsumoForm.minStock),
-          supplierId: sup.id,
-          imageUrl: newInsumoForm.imageUrl,
-        });
-      } else {
-        await addIngredient({
-          name: newInsumoForm.name,
-          category: newInsumoForm.category,
-          unit: newInsumoForm.unit,
-          purchasePriceARS: Number(newInsumoForm.purchasePriceARS),
-          referenceQty: Number(newInsumoForm.referenceQty),
-          stock: Number(newInsumoForm.stock),
-          minStock: Number(newInsumoForm.minStock),
-          supplierId: sup.id,
-          imageUrl: newInsumoForm.imageUrl,
-        });
-      }
-      setEditingInsumo(null);
-    } catch (err) {
-      // Error is caught and displayed by toast in Context
-    } finally {
-      setIsSubmittingInsumo(false);
-    }
-  };
+  const [creatingInsumo, setCreatingInsumo] = useState(false);
+  const openCreateInsumoModal = () => { if (insumoDataMode === 'real') { setEditingInsumo(null); setCreatingInsumo(true); } };
+  const openEditInsumoModal = (ing: Ingredient) => { if (insumoDataMode === 'real') { setCreatingInsumo(false); setEditingInsumo(ing); } };
 
   const handleConfirmDeleteInsumo = async () => {
     if (!insumoToDelete) return;
@@ -933,7 +823,7 @@ export default function LaboratorioPage() {
                           {ing.supplierName}
                         </td>
                         <td className="p-3.5 text-right font-medium text-mejunje-carbon">
-                          {formatCurrency(ing.purchasePriceARS)} x {ing.referenceQty} {ing.unit}
+                          {formatCurrency(ing.purchasePriceARS)} x {ing.referenceQty} {ing.purchaseUnit ?? ing.unit}
                         </td>
                         <td className="p-3.5 text-right font-bold text-mejunje-verdeprofundo">
                           {formatCurrency(ing.unitCostARS)} /{' '}
@@ -1192,241 +1082,7 @@ export default function LaboratorioPage() {
         onCancel={() => setBatchToDelete(null)}
       />
 
-      {/* Edit Insumo Modal */}
-      {editingInsumo && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 overflow-y-auto">
-          <div className="bg-white text-mejunje-carbon p-6 sm:p-7 rounded-3xl max-w-md w-full space-y-4 shadow-xl border border-mejunje-border font-typewriter my-8">
-            <div className="flex items-center justify-between border-b border-mejunje-border pb-3">
-              <h3 className="font-bold text-base text-mejunje-carbon">
-                {editingInsumo.id ? 'Editar Materia Prima' : 'Registrar Materia Prima (API MySQL)'}
-              </h3>
-              <button
-                onClick={() => setEditingInsumo(null)}
-                className="text-mejunje-secundario hover:text-mejunje-carbon p-1"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {realSuppliers.length === 0 && (
-              <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200 text-mejunje-ambar text-xs font-bold flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 shrink-0" />
-                <span>
-                  Atención: No hay proveedores reales en MySQL. Primero cree un proveedor en la sección Proveedores antes de registrar insumos reales.
-                </span>
-              </div>
-            )}
-
-            <form onSubmit={handleSaveNewInsumo} className="space-y-3.5 text-xs">
-              <div>
-                <label className="block text-mejunje-secundario mb-1 text-[10px] uppercase font-bold">
-                  Nombre de Materia Prima *
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Ej. Cera de Soja AP-50"
-                  value={newInsumoForm.name}
-                  onChange={(e) =>
-                    setNewInsumoForm({ ...newInsumoForm, name: e.target.value })
-                  }
-                  className="w-full bg-mejunje-papel border border-mejunje-border rounded-xl px-3 py-2 text-mejunje-carbon focus:outline-none focus:border-mejunje-verdeseco"
-                />
-              </div>
-
-              <div>
-                <label className="block text-mejunje-secundario mb-1 text-[10px] uppercase font-bold">
-                  Proveedor Asignado (MySQL Activo) *
-                </label>
-                <select
-                  value={newInsumoForm.supplierId}
-                  onChange={(e) =>
-                    setNewInsumoForm({ ...newInsumoForm, supplierId: e.target.value })
-                  }
-                  className="w-full bg-mejunje-papel border border-mejunje-border rounded-xl px-3 py-2 text-mejunje-carbon focus:outline-none"
-                >
-                  {realSuppliers.length === 0 ? (
-                    <option value="">Sin proveedores reales disponibles</option>
-                  ) : (
-                    realSuppliers.map((sup) => (
-                      <option key={sup.id} value={sup.id}>
-                        {sup.name} ({sup.contactPerson || 'General'})
-                      </option>
-                    ))
-                  )}
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-mejunje-secundario mb-1 text-[10px] uppercase font-bold">
-                    Categoría
-                  </label>
-                  <select
-                    value={newInsumoForm.category}
-                    onChange={(e) =>
-                      setNewInsumoForm({
-                        ...newInsumoForm,
-                        category: e.target.value as any,
-                      })
-                    }
-                    className="w-full bg-mejunje-papel border border-mejunje-border rounded-xl px-3 py-2 text-mejunje-carbon focus:outline-none"
-                  >
-                    <option value="Ceras">Ceras</option>
-                    <option value="Fragancias">Fragancias</option>
-                    <option value="Aditivos">Aditivos</option>
-                    <option value="Pabilos">Pabilos</option>
-                    <option value="Envases">Envases</option>
-                    <option value="Tapas">Tapas</option>
-                    <option value="Packaging">Packaging</option>
-                    <option value="Etiquetas">Etiquetas</option>
-                    <option value="Alcoholes">Alcoholes</option>
-                    <option value="Bases">Bases</option>
-                    <option value="Otros">Otros</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-mejunje-secundario mb-1 text-[10px] uppercase font-bold">
-                    Unidad Medida
-                  </label>
-                  <select
-                    value={newInsumoForm.unit}
-                    onChange={(e) =>
-                      setNewInsumoForm({
-                        ...newInsumoForm,
-                        unit: e.target.value as any,
-                      })
-                    }
-                    className="w-full bg-mejunje-papel border border-mejunje-border rounded-xl px-3 py-2 text-mejunje-carbon focus:outline-none"
-                  >
-                    <option value="g">Gramos (g)</option>
-                    <option value="kg">Kilos (kg)</option>
-                    <option value="ml">Mililitros (ml)</option>
-                    <option value="l">Litros (l)</option>
-                    <option value="unid">Unidad (unid)</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-mejunje-secundario mb-1 text-[10px] uppercase font-bold">
-                    Precio Compra ($ ARS)
-                  </label>
-                  <input
-                    type="number"
-                    value={newInsumoForm.purchasePriceARS}
-                    onChange={(e) =>
-                      setNewInsumoForm({
-                        ...newInsumoForm,
-                        purchasePriceARS: Number(e.target.value),
-                      })
-                    }
-                    className="w-full bg-mejunje-papel border border-mejunje-border rounded-xl px-3 py-2 text-mejunje-carbon focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-mejunje-secundario mb-1 text-[10px] uppercase font-bold">
-                    Cant. Referencia
-                  </label>
-                  <input
-                    type="number"
-                    value={newInsumoForm.referenceQty}
-                    onChange={(e) =>
-                      setNewInsumoForm({
-                        ...newInsumoForm,
-                        referenceQty: Number(e.target.value),
-                      })
-                    }
-                    className="w-full bg-mejunje-papel border border-mejunje-border rounded-xl px-3 py-2 text-mejunje-carbon focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              <div className="p-3 bg-mejunje-papel border border-mejunje-border rounded-xl flex items-center justify-between">
-                <span className="text-[11px] text-mejunje-secundario font-medium">
-                  Costo Unitario calculado (API):
-                </span>
-                <span className="text-xs font-bold text-mejunje-verdeprofundo">
-                  {formatCurrency(
-                    newInsumoForm.referenceQty > 0
-                      ? newInsumoForm.purchasePriceARS / newInsumoForm.referenceQty
-                      : 0
-                  )}{' '}
-                  /{' '}
-                  {newInsumoForm.unit === 'kg'
-                    ? 'g'
-                    : newInsumoForm.unit === 'l'
-                    ? 'ml'
-                    : newInsumoForm.unit}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-mejunje-secundario mb-1 text-[10px] uppercase font-bold">
-                    Stock Actual
-                  </label>
-                  <input
-                    type="number"
-                    value={newInsumoForm.stock}
-                    onChange={(e) =>
-                      setNewInsumoForm({
-                        ...newInsumoForm,
-                        stock: Number(e.target.value),
-                      })
-                    }
-                    className="w-full bg-mejunje-papel border border-mejunje-border rounded-xl px-3 py-2 text-mejunje-carbon focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-mejunje-secundario mb-1 text-[10px] uppercase font-bold">
-                    Stock Mínimo
-                  </label>
-                  <input
-                    type="number"
-                    value={newInsumoForm.minStock}
-                    onChange={(e) =>
-                      setNewInsumoForm({
-                        ...newInsumoForm,
-                        minStock: Number(e.target.value),
-                      })
-                    }
-                    className="w-full bg-mejunje-papel border border-mejunje-border rounded-xl px-3 py-2 text-mejunje-carbon focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-3 border-t border-mejunje-border">
-                <button
-                  type="button"
-                  onClick={() => setEditingInsumo(null)}
-                  disabled={isSubmittingInsumo}
-                  className="px-4 py-2 btn-mejunje-secondary rounded-xl text-xs"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmittingInsumo || realSuppliers.length === 0}
-                  className="px-4 py-2 btn-mejunje-primary font-bold rounded-xl shadow-xs text-xs flex items-center gap-1.5 disabled:opacity-50"
-                >
-                  {isSubmittingInsumo ? (
-                    <>
-                      <RotateCw className="w-3.5 h-3.5 animate-spin" /> Guardando en API...
-                    </>
-                  ) : (
-                    'Guardar Materia Prima'
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {(creatingInsumo || editingInsumo) && <IngredientEditor record={editingInsumo ?? undefined} close={() => { setCreatingInsumo(false); setEditingInsumo(null); }} />}
     </div>
   );
 }

@@ -109,7 +109,7 @@ export default function CatalogoPage() {
   const getProductImage = (product: CatalogProduct) => {
     if (product.imageUrl) return product.imageUrl;
     if (product.images && product.images.length > 0) return product.images[0];
-    return 'https://images.unsplash.com/photo-1603006905003-be475563bc59?auto=format&fit=crop&w=1000&q=80';
+    return '/lab/neutral-image.svg';
   };
 
   return (
@@ -441,8 +441,7 @@ export default function CatalogoPage() {
                   <img
                     src={
                       detailProduct.images?.[selectedImageIndex] ||
-                      detailProduct.imageUrl ||
-                      'https://images.unsplash.com/photo-1603006905003-be475563bc59?auto=format&fit=crop&w=1000&q=80'
+                      getProductImage(detailProduct)
                     }
                     alt={detailProduct.name}
                     className="w-full h-full object-cover filter saturate-85"

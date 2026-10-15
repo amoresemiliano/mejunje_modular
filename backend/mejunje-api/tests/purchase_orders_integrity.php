@@ -37,6 +37,7 @@ if (isset($argv[1])) {
         INSERT INTO purchase_orders VALUES ('po-1','OC-1','sup-1','Supplier','2026-10-09','Confirmada',5,5,NULL,NULL,1,'','');
         CREATE TABLE purchase_order_items (id TEXT, purchase_order_id TEXT, ingredient_id TEXT, ingredient_name TEXT, ordered_qty REAL, unit TEXT, unit_price_ars REAL, subtotal_ars REAL);
         INSERT INTO purchase_order_items VALUES ('item-1','po-1','ing-1','First',2,'kg',1,2), ('item-2','po-1','ing-2','Second',3,'kg',1,3);");
+    if ($scenario === 'unit-mismatch') $db->exec("UPDATE ingredients SET unit='g' WHERE id='ing-2'");
     if ($scenario === 'inactive') $db->exec("UPDATE ingredients SET is_active=0 WHERE id='ing-2'");
     if ($scenario === 'missing') $db->exec("DELETE FROM ingredients WHERE id='ing-2'");
     if ($scenario === 'rowcount') $db->failSecondUpdate = true;
@@ -69,7 +70,7 @@ if (isset($argv[1])) {
 if (!in_array('sqlite', PDO::getAvailableDrivers(), true)) { fwrite(STDERR, "pdo_sqlite required; tests cannot run.\n"); exit(1); }
 $failed = 0;
 function check(bool $ok, string $label): void { global $failed; echo ($ok ? '[PASS] ' : '[FAIL] ') . $label . "\n"; if (!$ok) $failed++; }
-foreach (['active','inactive','missing','rowcount','twice','owned','other','unassigned','initial'] as $scenario) {
+foreach (['active','inactive','missing','rowcount','twice','owned','other','unassigned','initial','unit-mismatch'] as $scenario) {
     $lines=[]; $exitCode=0;
     exec(escapeshellarg(PHP_BINARY).' '.escapeshellarg(__FILE__).' '.escapeshellarg($scenario), $lines, $exitCode);
     $r=json_decode(implode("\n", $lines), true);
@@ -82,7 +83,7 @@ foreach (['active','inactive','missing','rowcount','twice','owned','other','unas
         check(array_column($r['stocks'],'stock')===[12,23], "$scenario exact stock, no double increment");
         check($r['order']['status']==='Recibida' && $r['order']['received_at']!==null, "$scenario status and received_at");
         check($r['increments']===($scenario==='active' ? 2 : 0), "$scenario increment count");
-    } elseif (in_array($scenario, ['inactive','missing','rowcount'], true)) {
+    } elseif (in_array($scenario, ['inactive','missing','rowcount','unit-mismatch'], true)) {
         check(array_column($r['stocks'],'stock')===($scenario==='missing' ? [10] : [10,20]), "$scenario no stock changed");
         check($r['order']['status']==='Confirmada' && $r['order']['received_at']===null, "$scenario status and received_at preserved");
         if ($scenario!=='rowcount') {
